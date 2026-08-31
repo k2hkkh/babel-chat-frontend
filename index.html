@@ -121,7 +121,7 @@
           <option value="ko" selected>한국어 (Korean)</option>
           <option value="en">English (영어)</option>
           <option value="ja">日本語 (일본어)</option>
-          <option value="zh">中文 (중국어)</option>
+          <option value="zh-CN">中文 (중국어)</option>
           <option value="es">Español (스페인어)</option>
           <option value="vi">Tiếng Việt (베트남어)</option>
           <option value="th">ไทย (태국어)</option>
@@ -170,6 +170,24 @@
     let myLang = "ko";
     let chatHistory = [];
 
+    // 클라이언트 브라우저 직접 번역 함수 (IP 차단 없음)
+    async function clientTranslate(text, sourceLang, targetLang) {
+      if (!text || text.trim() === '') return text;
+      if (sourceLang === targetLang) return text;
+      try {
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang || 'auto'}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
+        const res = await fetch(url);
+        if (!res.ok) return text;
+        const data = await res.json();
+        if (data && data[0]) {
+          return data[0].map(item => item[0]).filter(Boolean).join('');
+        }
+        return text;
+      } catch (err) {
+        return text;
+      }
+    }
+
     window.addEventListener('DOMContentLoaded', () => {
       const params = new URLSearchParams(window.location.search);
       const roomParam = params.get('room');
@@ -179,6 +197,16 @@
       if (savedName) document.getElementById('nameInput').value = savedName;
 
       loadFavorites();
+    });
+
+    window.addEventListener('popstate', () => {
+      if (currentRoom) {
+        if (confirm("대화방을 나가시겠습니까?")) {
+          leaveRoom(false);
+        } else {
+          history.pushState(null, '', location.href);
+        }
+      }
     });
 
     function generateRoomCode() {
@@ -256,11 +284,12 @@
         joinBtn.innerText = "입장하기";
         joinBtn.disabled = false;
         
-        // 백엔드 규격에 맞춘 join_room 전송
         socket.emit("join_room", { room: currentRoom, name: myName });
         document.getElementById('displayRoomCode').innerText = currentRoom;
         document.getElementById('lobby-screen').style.display = 'none';
         document.getElementById('chat-screen').style.display = 'flex';
+
+        history.pushState(null, '', location.href);
       });
 
       socket.on("disconnect", () => {
@@ -268,9 +297,8 @@
         if (dot) dot.className = "status-dot";
       });
 
-      // 백엔드 규격에 맞춘 receive_message 수신
-      socket.on("receive_message", (data) => {
-        appendMessage(data);
+      socket.on("receive_message", async (data) => {
+        await processAndDisplayMessage(data);
       });
 
       socket.on("connect_error", () => {
@@ -295,7 +323,6 @@
         return;
       }
 
-      // 백엔드 규격에 맞춘 send_message 전송
       socket.emit("send_message", {
         room: currentRoom,
         sender_name: myName,
@@ -307,12 +334,17 @@
       input.focus();
     }
 
-    function appendMessage(data) {
+    async function processAndDisplayMessage(data) {
       const msgs = document.getElementById('messages');
       const isMine = data.sender_name === myName;
       
-      // 내 사용 언어에 맞는 번역문 추출 (없으면 원문 사용)
-      const displayText = (data.translations && data.translations[myLang]) ? data.translations[myLang] : data.original_text;
+      let displayText = data.original_text;
+
+      // 내가 쓴 글이 아니거나 보낸 언어와 내 설정 언어가 다르면 브라우저에서 즉시 번역
+      if (data.sender_lang !== myLang) {
+        displayText = await clientTranslate(data.original_text, data.sender_lang, myLang);
+      }
+
       const originalText = data.original_text;
       const timeStr = new Date(data.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -348,11 +380,18 @@
       a.click();
     }
 
-    function playTTS(text, lang) {
+    function playTTS(text, langCode) {
       if (!('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
+
+      const langMap = {
+        'ko': 'ko-KR', 'en': 'en-US', 'ja': 'ja-JP', 'zh-CN': 'zh-CN',
+        'es': 'es-ES', 'fr': 'fr-FR', 'de': 'de-DE', 'vi': 'vi-VN',
+        'th': 'th-TH', 'ar': 'ar-SA'
+      };
+
       const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = lang;
+      utter.lang = langMap[langCode] || langCode;
       utter.rate = 0.95;
       window.speechSynthesis.speak(utter);
     }
@@ -366,8 +405,8 @@
       navigator.clipboard.writeText(inviteUrl).then(() => alert("초대 링크가 복사되었습니다:\n" + inviteUrl));
     }
 
-    function leaveRoom() {
-      if (confirm("대화방을 나가시겠습니까?")) {
+    function leaveRoom(manual = true) {
+      if (!manual || confirm("대화방을 나가시겠습니까?")) {
         if (socket) {
           socket.emit("leave_room", { room: currentRoom });
           socket.disconnect();
