@@ -22,7 +22,10 @@
     })();
   </script>
 
+  <!-- Socket.io 및 실시간 QR코드 생성 라이브러리 -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
   <style>
     html, body { 
       height: 100%; 
@@ -75,8 +78,20 @@
     .status-dot.online { background: #3FA9A0; }
     
     .icon-btn { background: #2A313D; border: 1px solid #333B49; color: #EDEAE3; border-radius: 6px; padding: 5px 8px; font-size: 11px; cursor: pointer; }
+    .icon-btn.active { background: rgba(63, 169, 160, 0.25); border-color: #3FA9A0; color: #3FA9A0; }
     .exit-btn { background: rgba(224, 82, 82, 0.15); border-color: #E05252; color: #E05252; }
     
+    /* 상용구 프리셋 바 */
+    .preset-bar {
+      display: flex; gap: 6px; overflow-x: auto; padding: 6px 14px; background: #181E27; border-bottom: 1px solid #2A313D;
+      white-space: nowrap; -webkit-overflow-scrolling: touch;
+    }
+    .preset-chip {
+      background: #252D3A; border: 1px solid #333B49; color: #B0B8C4;
+      font-size: 11px; padding: 4px 10px; border-radius: 14px; cursor: pointer;
+    }
+    .preset-chip:active { background: #3FA9A0; color: #0E1116; }
+
     .chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
     .msg-wrap { display: flex; flex-direction: column; max-width: 82%; }
     .msg-wrap.mine { align-self: flex-end; align-items: flex-end; }
@@ -91,7 +106,13 @@
     .original-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; font-size: 11px; margin-top: 6px; opacity: 0.8; border-top: 1px dashed rgba(255,255,255,0.25); padding-top: 4px; }
     .tts-btn { cursor: pointer; font-size: 13px; opacity: 0.85; flex-shrink: 0; padding: 0 2px; }
     
-    .chat-input-area { padding: 10px 14px; background: #14181F; border-top: 1px solid #2A313D; display: flex; gap: 8px; align-items: center; }
+    /* 하단 입력 영역 & 번역 미리보기 */
+    .input-section { background: #14181F; border-top: 1px solid #2A313D; }
+    .preview-box {
+      padding: 4px 16px; font-size: 11px; color: #3FA9A0; min-height: 18px;
+      display: none; background: #1A212C; border-bottom: 1px dashed #2A313D;
+    }
+    .chat-input-area { padding: 8px 14px 12px 14px; display: flex; gap: 8px; align-items: center; }
     .input-wrapper { position: relative; flex: 1; display: flex; align-items: center; }
     .input-wrapper input { width: 100%; padding-right: 36px; }
     
@@ -109,6 +130,23 @@
     }
 
     .send-btn { background: #3FA9A0; border: none; color: #0E1116; font-weight: bold; padding: 10px 16px; border-radius: 8px; cursor: pointer; flex-shrink: 0; }
+
+    /* QR 코드 모달 창 */
+    .modal-overlay {
+      display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.75); z-index: 1000; align-items: center; justify-content: center; padding: 20px;
+    }
+    .modal-card {
+      background: #1E2530; padding: 24px; border-radius: 16px; text-align: center;
+      max-width: 320px; width: 100%; border: 1px solid #333B49;
+    }
+    .modal-title { font-size: 16px; font-weight: bold; margin-bottom: 6px; color: #EDEAE3; }
+    .modal-sub { font-size: 12px; color: #8A93A3; margin-bottom: 16px; }
+    #qrcode { display: flex; justify-content: center; margin: 12px 0; padding: 10px; background: #fff; border-radius: 8px; }
+    .modal-close {
+      margin-top: 14px; width: 100%; padding: 10px; background: #2A313D;
+      border: 1px solid #333B49; color: #EDEAE3; border-radius: 8px; cursor: pointer; font-size: 13px;
+    }
   </style>
 </head>
 <body>
@@ -163,7 +201,8 @@
       <div class="room-info">
         <span class="status-dot" id="statusDot" title="서버 연결 상태"></span>
         <span class="room-badge" id="displayRoomCode">ROOM-0000</span>
-        <button class="icon-btn" onclick="copyRoomCode()">코드복사</button>
+        <button class="icon-btn" onclick="openQRModal()">QR보기</button>
+        <button class="icon-btn" id="autoTtsBtn" onclick="toggleAutoTTS()">자동음성: OFF</button>
         <button class="icon-btn" onclick="copyInviteLink()">초대링크</button>
         <button class="icon-btn" onclick="downloadChatLog()">대화저장</button>
       </div>
@@ -172,22 +211,47 @@
       </div>
     </div>
 
+    <!-- 빠른 응답 프리셋 칩 -->
+    <div class="preset-bar">
+      <div class="preset-chip" onclick="sendPreset('안녕하세요! 반갑습니다.')">👋 인사</div>
+      <div class="preset-chip" onclick="sendPreset('네, 알겠습니다.')">👌 확인</div>
+      <div class="preset-chip" onclick="sendPreset('목적지에 도착했습니다.')">📍 도착</div>
+      <div class="preset-chip" onclick="sendPreset('결제는 카드로 도와드리겠습니다.')">💳 카드결제</div>
+      <div class="preset-chip" onclick="sendPreset('영수증 필요하신가요?')">🧾 영수증</div>
+      <div class="preset-chip" onclick="sendPreset('잠시만 기다려 주세요.')">⏳ 대기</div>
+      <div class="preset-chip" onclick="sendPreset('감사합니다. 좋은 하루 되세요!')">✨ 감사</div>
+    </div>
+
     <div id="messages" class="chat-messages"></div>
 
-    <form class="chat-input-area" onsubmit="handleSendForm(event)">
-      <div class="input-wrapper">
-        <input type="text" id="msgInput" placeholder="메시지를 입력하거나 마이크를 누르세요..." autocomplete="off" />
-        <button type="button" class="mic-btn" id="micBtn" onclick="toggleSTT()" title="음성 입력 토글">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-            <line x1="12" y1="19" x2="12" y2="23"></line>
-            <line x1="8" y1="23" x2="16" y2="23"></line>
-          </svg>
-        </button>
-      </div>
-      <button type="submit" class="send-btn">전송</button>
-    </form>
+    <div class="input-section">
+      <div id="previewBox" class="preview-box"></div>
+      <form class="chat-input-area" onsubmit="handleSendForm(event)">
+        <div class="input-wrapper">
+          <input type="text" id="msgInput" placeholder="메시지를 입력하거나 마이크를 누르세요..." autocomplete="off" oninput="handlePreview(this.value)" />
+          <button type="button" class="mic-btn" id="micBtn" onclick="toggleSTT()" title="음성 입력 토글">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+          </button>
+        </div>
+        <button type="submit" class="send-btn">전송</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- QR 코드 팝업 모달 -->
+  <div id="qrModal" class="modal-overlay" onclick="closeQRModal(event)">
+    <div class="modal-card" onclick="event.stopPropagation()">
+      <div class="modal-title">상대방 초대 QR 코드</div>
+      <div class="modal-sub">스마트폰 기본 카메라로 비추면 바로 입장합니다.</div>
+      <div id="qrcode"></div>
+      <div style="font-size: 13px; font-weight: bold; color: #3FA9A0; margin-top: 8px;" id="qrRoomText"></div>
+      <button class="modal-close" onclick="closeQRModal()">닫기</button>
+    </div>
   </div>
 
   <script>
@@ -200,6 +264,9 @@
     
     let recognition = null;
     let userWantsRecording = false;
+    let autoTTS = false;
+    let previewTimer = null;
+    let qrGenerator = null;
 
     async function clientTranslate(text, sourceLang, targetLang) {
       if (!text || text.trim() === '') return text;
@@ -226,7 +293,6 @@
       const savedName = localStorage.getItem('babel_nickname');
       if (savedName) document.getElementById('nameInput').value = savedName;
 
-      // 마지막 사용 언어 불러오기 및 기본값 세팅
       const savedLang = localStorage.getItem('babel_lang');
       if (savedLang) {
         document.getElementById('langSelect').value = savedLang;
@@ -311,7 +377,6 @@
       myName = n;
       myLang = l;
 
-      // 닉네임과 언어 설정 로컬 스토리지에 영구 보존
       localStorage.setItem('babel_nickname', myName);
       localStorage.setItem('babel_lang', myLang);
       
@@ -362,15 +427,13 @@
 
     function handleSendForm(e) {
       e.preventDefault();
-      if (userWantsRecording) {
-        toggleSTT();
-      }
+      if (userWantsRecording) toggleSTT();
       sendMessage();
     }
 
-    function sendMessage() {
+    function sendMessage(customText = null) {
       const input = document.getElementById('msgInput');
-      const text = input.value.trim();
+      const text = customText || input.value.trim();
       
       if (!text) return;
 
@@ -386,8 +449,36 @@
         text: text
       });
       
-      input.value = "";
-      input.focus();
+      if (!customText) {
+        input.value = "";
+        document.getElementById('previewBox').style.display = 'none';
+        input.focus();
+      }
+    }
+
+    function sendPreset(text) {
+      sendMessage(text);
+    }
+
+    // 전송 전 영문 번역 실시간 미리보기 (디바운스 처리)
+    function handlePreview(val) {
+      const previewBox = document.getElementById('previewBox');
+      clearTimeout(previewTimer);
+
+      if (!val || val.trim().length === 0 || myLang !== 'ko') {
+        previewBox.style.display = 'none';
+        return;
+      }
+
+      previewTimer = setTimeout(async () => {
+        const translated = await clientTranslate(val, 'ko', 'en');
+        if (translated && translated !== val) {
+          previewBox.innerText = `🔍 예상 번역(EN): ${translated}`;
+          previewBox.style.display = 'block';
+        } else {
+          previewBox.style.display = 'none';
+        }
+      }, 350);
     }
 
     async function processAndDisplayMessage(data) {
@@ -434,6 +525,24 @@
       `;
       msgs.appendChild(wrap);
       msgs.scrollTop = msgs.scrollHeight;
+
+      // 자동 읽기(Auto-TTS) 활성화 상태이고 상대방 메시지인 경우 자동 음성 출력
+      if (autoTTS && !isMine) {
+        playTTS(displayText, myLang);
+      }
+    }
+
+    function toggleAutoTTS() {
+      autoTTS = !autoTTS;
+      const btn = document.getElementById('autoTtsBtn');
+      if (autoTTS) {
+        btn.innerText = "자동음성: ON";
+        btn.classList.add('active');
+      } else {
+        btn.innerText = "자동음성: OFF";
+        btn.classList.remove('active');
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      }
     }
 
     function toggleSTT() {
@@ -474,6 +583,7 @@
             const transcript = event.results[i][0].transcript.trim();
             if (transcript) {
               insertTextAtCursor(input, transcript + " ");
+              handlePreview(input.value);
             }
           }
         }
@@ -511,6 +621,31 @@
       input.focus();
     }
 
+    // QR 모달 열기 및 즉석 생성
+    function openQRModal() {
+      const modal = document.getElementById('qrModal');
+      const qrContainer = document.getElementById('qrcode');
+      const qrText = document.getElementById('qrRoomText');
+      const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${currentRoom}`;
+
+      qrContainer.innerHTML = "";
+      qrGenerator = new QRCode(qrContainer, {
+        text: inviteUrl,
+        width: 180,
+        height: 180,
+        colorDark: "#000000",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.H
+      });
+
+      qrText.innerText = currentRoom;
+      modal.style.display = 'flex';
+    }
+
+    function closeQRModal(e) {
+      document.getElementById('qrModal').style.display = 'none';
+    }
+
     function downloadChatLog() {
       if (chatHistory.length === 0) {
         alert("저장할 대화 내용이 없습니다.");
@@ -538,10 +673,6 @@
       utter.lang = langMap[langCode] || langCode;
       utter.rate = 0.95;
       window.speechSynthesis.speak(utter);
-    }
-
-    function copyRoomCode() {
-      navigator.clipboard.writeText(currentRoom).then(() => alert("방 코드가 복사되었습니다: " + currentRoom));
     }
 
     function copyInviteLink() {
