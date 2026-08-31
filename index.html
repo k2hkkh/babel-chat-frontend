@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Babel Room</title>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+  html, body { height: 100%; margin: 0; }
+  * { box-sizing: border-box; }
+  body { font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #14181F; color: #EDEAE3; }
+  input, select, button { font-family: inherit; }
+  .screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .card { width: 100%; max-width: 380px; background: #1E2530; border-radius: 16px; padding: 32px 28px; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .brand-title { font-family: Georgia, serif; font-size: 24px; color: #EDEAE3; font-weight: 600; font-style: italic; }
+  .sub { color: #8A93A3; font-size: 13px; margin: 0 0 24px 0; line-height: 1.5; }
+  label { color: #8A93A3; font-size: 12px; display: block; margin-bottom: 6px; }
+  .field { margin-bottom: 18px; }
+  input[type=text], select {
+    width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #333B49;
+    background: #14181F; color: #EDEAE3; font-size: 14px; outline: none;
+  }
+  .join-btn {
+    width: 100%; padding: 12px; border-radius: 8px; border: none;
+    background: #2A313D; color: #5A6272; font-weight: 600; font-size: 14px; cursor: not-allowed;
+  }
+  .join-btn.active { background: #3FA9A0; color: #0E1116; cursor: pointer; }
+
+  .chat-wrap { height: 100vh; display: flex; flex-direction: column; }
+  .chat-header {
+    padding: 14px 18px; border-bottom: 1px solid #262D39;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .chat-header-left { display: flex; align-items: center; gap: 8px; }
+  .chat-header-right { display: flex; align-items: center; gap: 12px; color: #8A93A3; font-size: 12px; }
+  .messages { flex: 1; overflow-y: auto; padding: 16px 18px; }
+  .empty-hint { color: #5A6272; font-size: 13px; text-align: center; margin-top: 40px; }
+  .msg-row { display: flex; margin-bottom: 10px; }
+  .msg-row.mine { justify-content: flex-end; }
+  .msg-inner { max-width: 78%; display: flex; }
+  .ribbon { width: 4px; border-radius: 2px; flex-shrink: 0; }
+  .bubble { border-radius: 12px; padding: 9px 13px; font-size: 14px; line-height: 1.5; }
+  .bubble.theirs { background: #1E2530; color: #EDEAE3; }
+  .bubble.mine { background: #3FA9A0; color: #0E1116; }
+  .msg-meta { font-size: 11px; font-weight: 700; margin-bottom: 3px; }
+  .error-bar { color: #C5563E; font-size: 12px; padding: 0 18px 6px; }
+  .input-bar { padding: 12px 16px 16px; border-top: 1px solid #262D39; display: flex; gap: 8px; }
+  .input-bar input {
+    flex: 1; padding: 11px 14px; border-radius: 20px; border: 1px solid #333B49;
+    background: #1E2530; color: #EDEAE3; font-size: 14px; outline: none;
+  }
+  .send-btn {
+    width: 42px; height: 42px; border-radius: 50%; border: none;
+    background: #2A313D; color: #5A6272; cursor: not-allowed; font-size: 18px;
+  }
+  .send-btn.active { background: #3FA9A0; color: #0E1116; cursor: pointer; }
+  .mic-btn {
+    width: 42px; height: 42px; border-radius: 50%; border: none;
+    background: #2A313D; color: #8A93A3; cursor: pointer; font-size: 16px; flex-shrink: 0;
+  }
+  .mic-btn.recording { background: #C5563E; color: #EDEAE3; }
+  .speak-btn { background: none; border: none; padding: 0; cursor: pointer; color: inherit; opacity: 0.75; font-size: 13px; vertical-align: middle; }
+  .original-line { margin-top: 4px; font-size: 12.5px; opacity: 0.7; display: flex; align-items: center; gap: 6px; }
+  .leave-btn { background: none; border: none; color: #5A6272; font-size: 11px; padding: 0 0 10px 18px; align-self: flex-start; cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+// Render 백엔드 서버 URL 직접 연결
+const BACKEND_URL = "https://babel-chat-backend.onrender.com";
+const PROFILE_KEY = "mlchat_profile";
+
+const LANGS = [
+  { code: "ko", label: "한국어" },
+  { code: "en", label: "English" },
+  { code: "ja", label: "日本語" },
+  { code: "zh", label: "中文" },
+  { code: "es", label: "Español" },
+  { code: "fr", label: "Français" },
+  { code: "de", label: "Deutsch" },
+  { code: "vi", label: "Tiếng Việt" },
+  { code: "th", label: "ไทย" },
+  { code: "ar", label: "العربية" },
+];
+const RIBBON_COLORS = {
+  ko: "#3FA9A0", en: "#D9A441", ja: "#B96BB0", zh: "#C5563E", es: "#5C8AD9",
+  fr: "#7A7FE0", de: "#6E9E5C", vi: "#4FB3A9", th: "#D97F4A", ar: "#A3874F",
+};
+function ribbonColor(code) { return RIBBON_COLORS[code] || "#8A93A3"; }
+function langLabel(code) { const f = LANGS.find(l => l.code === code); return f ? f.label : code; }
+
+const SPEECH_LOCALES = {
+  ko: "ko-KR", en: "en-US", ja: "ja-JP", zh: "zh-CN", es: "es-ES",
+  fr: "fr-FR", de: "de-DE", vi: "vi-VN", th: "th-TH", ar: "ar-SA",
+};
+function speakText(text, langCode) {
+  try {
+    if (!("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = SPEECH_LOCALES[langCode] || "en-US";
+    window.speechSynthesis.speak(utter);
+  } catch (e) {}
+}
+
+function startVoiceInput(micBtn, draftInput, updateSendBtn) {
+  const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognitionCtor) {
+    alert("이 브라우저는 음성 입력을 지원하지 않아요. 크롬 브라우저를 사용해보세요.");
+    return;
+  }
+  const recognition = new SpeechRecognitionCtor();
+  recognition.lang = SPEECH_LOCALES[profile.lang] || "en-US";
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  micBtn.classList.add("recording");
+  recognition.start();
+
+  recognition.onresult = function (event) {
+    const transcript = event.results[0][0].transcript;
+    draftInput.value = (draftInput.value ? draftInput.value + " " : "") + transcript;
+    updateSendBtn();
+  };
+  recognition.onerror = function () { micBtn.classList.remove("recording"); };
+  recognition.onend = function () { micBtn.classList.remove("recording"); };
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ---- State & Socket ----
+let profile = null;
+try {
+  const saved = localStorage.getItem(PROFILE_KEY);
+  if (saved) profile = JSON.parse(saved);
+} catch (e) {}
+
+let socket = null;
+let messages = [];
+
+const root = document.getElementById("root");
+
+function render() {
+  if (!profile) {
+    renderJoinScreen();
+  } else {
+    renderChatScreen();
+  }
+}
+
+function renderJoinScreen() {
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
+  root.innerHTML =
+    '<div class="screen"><div class="card">' +
+    '<div class="brand"><span style="font-size:22px">🌐</span><span class="brand-title">Babel Room</span></div>' +
+    '<p class="sub">같은 방 이름을 입력한 사람끼리 대화방이 연결돼요.</p>' +
+    '<div class="field"><label>방 이름 (같은 이름끼리 연결)</label><input type="text" id="room-input" placeholder="예: 우리가족, team-a" /></div>' +
+    '<div class="field"><label>이름</label><input type="text" id="name-input" placeholder="예: 지훈" /></div>' +
+    '<div class="field"><label>사용할 언어</label><select id="lang-input">' +
+    LANGS.map(function (l) { return '<option value="' + l.code + '">' + l.label + '</option>'; }).join("") +
+    '</select></div>' +
+    '<button class="join-btn" id="join-btn">입장하기</button>' +
+    '</div></div>';
+
+  const roomInput = document.getElementById("room-input");
+  const nameInput = document.getElementById("name-input");
+  const joinBtn = document.getElementById("join-btn");
+
+  function updateBtn() {
+    const ok = roomInput.value.trim() && nameInput.value.trim();
+    joinBtn.classList.toggle("active", !!ok);
+  }
+  roomInput.addEventListener("input", updateBtn);
+  nameInput.addEventListener("input", updateBtn);
+
+  joinBtn.addEventListener("click", function () {
+    const room = roomInput.value.trim();
+    const name = nameInput.value.trim();
+    const lang = document.getElementById("lang-input").value;
+    if (!room || !name) return;
+    profile = { name: name, lang: lang, room: room };
+    try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); } catch (e) {}
+    render();
+  });
+}
+
+function renderChatScreen() {
+  root.innerHTML =
+    '<div class="chat-wrap">' +
+    '<div class="chat-header">' +
+    '<div class="chat-header-left"><span style="font-size:18px">🌐</span>' +
+    '<span class="brand-title" style="font-size:18px">Babel Room</span>' +
+    '<span style="color:#5A6272;font-size:12px;margin-left:8px">👥 ' + escapeHtml(profile.room) + '</span></div>' +
+    '<div class="chat-header-right"><span>' + escapeHtml(profile.name) + ' · <span style="color:' + ribbonColor(profile.lang) + ';font-family:monospace">' + profile.lang + '</span></span></div>' +
+    '</div>' +
+    '<div class="messages" id="messages"><div class="empty-hint">방에 연결하는 중…</div></div>' +
+    '<div id="error-area"></div>' +
+    '<div class="input-bar"><button class="mic-btn" id="mic-btn" title="음성 입력">🎤</button><input type="text" id="draft-input" placeholder="' + langLabel(profile.lang) + '로 메시지 입력…" />' +
+    '<button class="send-btn" id="send-btn">➤</button></div>' +
+    '<button class="leave-btn" id="leave-btn">나가기</button>' +
+    '</div>';
+
+  document.getElementById("leave-btn").addEventListener("click", function () {
+    profile = null;
+    try { localStorage.removeItem(PROFILE_KEY); } catch (e) {}
+    if (socket) socket.disconnect();
+    render();
+  });
+
+  const draftInput = document.getElementById("draft-input");
+  const sendBtn = document.getElementById("send-btn");
+  function updateSendBtn() { sendBtn.classList.toggle("active", !!draftInput.value.trim()); }
+  draftInput.addEventListener("input", updateSendBtn);
+  draftInput.addEventListener("keydown", function (e) { if (e.key === "Enter") doSend(); });
+  sendBtn.addEventListener("click", doSend);
+
+  const micBtn = document.getElementById("mic-btn");
+  micBtn.addEventListener("click", function () { startVoiceInput(micBtn, draftInput, updateSendBtn); });
+
+  initSocket();
+}
+
+function initSocket() {
+  socket = io(BACKEND_URL, {
+    transports: ["websocket", "polling"],
+  });
+
+  socket.on("connect", () => {
+    showError(null);
+    socket.emit("join_room", {
+      room: profile.room,
+      name: profile.name,
+      lang: profile.lang,
+    });
+    const msgBox = document.getElementById("messages");
+    if (msgBox && messages.length === 0) {
+      msgBox.innerHTML = '<div class="empty-hint">대화방에 연결되었습니다. 첫 메시지를 보내보세요!</div>';
+    }
+  });
+
+  socket.on("receive_message", (data) => {
+    messages.push(data);
+    renderMessages();
+  });
+
+  socket.on("connect_error", (err) => {
+    showError("서버 연결 중입니다. 잠시만 기다려주세요...");
+  });
+}
+
+function showError(msg) {
+  const area = document.getElementById("error-area");
+  if (!area) return;
+  area.innerHTML = msg ? '<div class="error-bar">' + escapeHtml(msg) + '</div>' : "";
+}
+
+function renderMessages() {
+  const container = document.getElementById("messages");
+  if (!container) return;
+  if (messages.length === 0) {
+    container.innerHTML = '<div class="empty-hint">아직 메시지가 없어요. 첫 메시지를 보내보세요.</div>';
+    return;
+  }
+  container.innerHTML = messages.map(renderMessageHtml).join("");
+  container.scrollTop = container.scrollHeight;
+
+  container.querySelectorAll(".speak-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      speakText(btn.getAttribute("data-text"), btn.getAttribute("data-lang"));
+    });
+  });
+}
+
+function renderMessageHtml(m) {
+  const isMine = m.sender_name === profile.name;
+  const color = ribbonColor(m.sender_lang);
+  const sameLang = m.sender_lang === profile.lang;
+  const textColor = isMine ? "#0E1116" : "#EDEAE3";
+
+  // 번역된 텍스트 확인 (백엔드에서 translations 객체로 전달)
+  const translatedText = (m.translations && m.translations[profile.lang]) || m.original_text;
+
+  let translatedHtml = "";
+  if (!sameLang) {
+    translatedHtml =
+      '<div style="display:flex;align-items:center;gap:6px">' +
+        '<span>' + escapeHtml(translatedText) + '</span>' +
+        '<button class="speak-btn" data-text="' + escapeHtml(translatedText) + '" data-lang="' + profile.lang + '" style="color:' + textColor + '">🔊</button>' +
+      '</div>';
+  }
+
+  const origColor = isMine ? "#0E1116" : (sameLang ? textColor : "#8A93A3");
+  const originalHtml =
+    '<div class="original-line" style="color:' + origColor + (sameLang ? "" : ";border-top:1px solid " + (isMine ? "#0E1116" : "#333B49") + ";padding-top:4px") + '">' +
+      '<span>' + escapeHtml(m.original_text) + '</span>' +
+      '<button class="speak-btn" data-text="' + escapeHtml(m.original_text) + '" data-lang="' + m.sender_lang + '" style="color:' + origColor + '">🔊</button>' +
+    '</div>';
+
+  const metaHtml = isMine ? "" :
+    '<div class="msg-meta" style="color:' + color + '">' + escapeHtml(m.sender_name) + ' · <span style="font-family:monospace">' + m.sender_lang + '</span></div>';
+
+  const ribbonHtmlLeft = !isMine ? '<div class="ribbon" style="background:' + color + ';margin-right:8px"></div>' : "";
+  const ribbonHtmlRight = isMine ? '<div class="ribbon" style="background:' + color + ';margin-left:8px"></div>' : "";
+
+  return '<div class="msg-row ' + (isMine ? "mine" : "") + '"><div class="msg-inner">' +
+    ribbonHtmlLeft +
+    '<div class="bubble ' + (isMine ? "mine" : "theirs") + '">' + metaHtml + translatedHtml + originalHtml + '</div>' +
+    ribbonHtmlRight +
+    '</div></div>';
+}
+
+function doSend() {
+  const input = document.getElementById("draft-input");
+  const text = input.value.trim();
+  if (!text || !socket) return;
+  
+  socket.emit("send_message", {
+    room: profile.room,
+    sender_name: profile.name,
+    sender_lang: profile.lang,
+    text: text,
+  });
+
+  input.value = "";
+  document.getElementById("send-btn").classList.remove("active");
+}
+
+render();
+</script>
+</body>
+</html>
