@@ -122,8 +122,12 @@
           <option value="en">English (영어)</option>
           <option value="ja">日本語 (일본어)</option>
           <option value="zh">中文 (중국어)</option>
-          <option value="vi">Tiếng Việt (베트남어)</option>
           <option value="es">Español (스페인어)</option>
+          <option value="vi">Tiếng Việt (베트남어)</option>
+          <option value="th">ไทย (태국어)</option>
+          <option value="de">Deutsch (독일어)</option>
+          <option value="fr">Français (프랑스어)</option>
+          <option value="ar">العربية (아랍어)</option>
         </select>
       </div>
 
@@ -239,7 +243,6 @@
       joinBtn.innerText = "서버 연결 중...";
       joinBtn.disabled = true;
 
-      // 소켓 연결 설정 (WebSocket 우선 사용)
       socket = io(BACKEND_URL, { 
         transports: ["websocket", "polling"],
         timeout: 45000,
@@ -253,7 +256,8 @@
         joinBtn.innerText = "입장하기";
         joinBtn.disabled = false;
         
-        socket.emit("join", { room: currentRoom, name: myName, lang: myLang });
+        // 백엔드 규격에 맞춘 join_room 전송
+        socket.emit("join_room", { room: currentRoom, name: myName });
         document.getElementById('displayRoomCode').innerText = currentRoom;
         document.getElementById('lobby-screen').style.display = 'none';
         document.getElementById('chat-screen').style.display = 'flex';
@@ -264,7 +268,8 @@
         if (dot) dot.className = "status-dot";
       });
 
-      socket.on("message", (data) => {
+      // 백엔드 규격에 맞춘 receive_message 수신
+      socket.on("receive_message", (data) => {
         appendMessage(data);
       });
 
@@ -286,15 +291,16 @@
       if (!text) return;
 
       if (!socket || !socket.connected) {
-        alert("서버 연결이 원활하지 않습니다. 잠시 후 초록불(🟢)이 들어오면 다시 시도해 주세요.");
+        alert("서버 연결이 원활하지 않습니다. 초록불(🟢)을 확인해 주세요.");
         return;
       }
 
-      socket.emit("message", {
+      // 백엔드 규격에 맞춘 send_message 전송
+      socket.emit("send_message", {
         room: currentRoom,
-        sender: myName,
-        text: text,
-        lang: myLang
+        sender_name: myName,
+        sender_lang: myLang,
+        text: text
       });
       
       input.value = "";
@@ -303,25 +309,26 @@
 
     function appendMessage(data) {
       const msgs = document.getElementById('messages');
-      const isMine = data.sender === myName;
+      const isMine = data.sender_name === myName;
       
-      const displayText = data.translatedText || data.text;
-      const targetLang = data.targetLang || myLang;
-      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      // 내 사용 언어에 맞는 번역문 추출 (없으면 원문 사용)
+      const displayText = (data.translations && data.translations[myLang]) ? data.translations[myLang] : data.original_text;
+      const originalText = data.original_text;
+      const timeStr = new Date(data.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-      chatHistory.push(`[${timeStr}] ${data.sender}: ${displayText}${data.translatedText && data.translatedText !== data.text ? ` (원문: ${data.text})` : ''}`);
+      chatHistory.push(`[${timeStr}] ${data.sender_name}: ${displayText}${displayText !== originalText ? ` (원문: ${originalText})` : ''}`);
 
       const wrap = document.createElement('div');
       wrap.className = `msg-wrap ${isMine ? 'mine' : 'theirs'}`;
 
       wrap.innerHTML = `
         <div class="msg-meta">
-          <span>${data.sender} (${timeStr})</span>
-          <span class="tts-btn" onclick="playTTS('${displayText.replace(/'/g, "\\'")}', '${targetLang}')">🔊</span>
+          <span>${data.sender_name} (${timeStr})</span>
+          <span class="tts-btn" onclick="playTTS('${displayText.replace(/'/g, "\\'")}', '${myLang}')">🔊</span>
         </div>
         <div class="msg-box">
           <div class="translated-text">${displayText}</div>
-          ${data.translatedText && data.translatedText !== data.text ? `<div class="original-text">${data.text}</div>` : ''}
+          ${displayText !== originalText ? `<div class="original-text">${originalText}</div>` : ''}
         </div>
       `;
       msgs.appendChild(wrap);
@@ -361,7 +368,10 @@
 
     function leaveRoom() {
       if (confirm("대화방을 나가시겠습니까?")) {
-        if (socket) socket.disconnect();
+        if (socket) {
+          socket.emit("leave_room", { room: currentRoom });
+          socket.disconnect();
+        }
         location.reload();
       }
     }
