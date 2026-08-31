@@ -3,7 +3,6 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<!-- 캐시 방지 메타 태그: 항상 최신 버전 로드 -->
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
@@ -64,10 +63,9 @@
     background: #2A313D; color: #8A93A3; cursor: pointer; font-size: 16px; flex-shrink: 0;
   }
   .mic-btn.recording { background: #C5563E; color: #EDEAE3; }
-  .speak-btn { background: none; border: none; padding: 0; cursor: pointer; color: inherit; opacity: 0.75; font-size: 13px; vertical-align: middle; }
+  .speak-btn { background: none; border: none; padding: 0; cursor: pointer; font-size: 14px; vertical-align: middle; }
   .original-line { margin-top: 4px; font-size: 12.5px; opacity: 0.7; display: flex; align-items: center; gap: 6px; }
   .leave-btn { background: none; border: none; color: #5A6272; font-size: 11px; padding: 0 0 10px 18px; align-self: flex-start; cursor: pointer; }
-  .status-badge { font-size: 10px; opacity: 0.7; margin-left: 4px; }
 </style>
 </head>
 <body>
@@ -98,39 +96,49 @@ function langLabel(code) { const f = LANGS.find(l => l.code === code); return f 
 
 const SPEECH_LOCALES = {
   ko: "ko-KR", en: "en-US", ja: "ja-JP", zh: "zh-CN", es: "es-ES",
-  fr: "fr-FR", de: "de-DE", vi: "vi-VN", th: "th-TH", ar: "ar-SA",
+  fr: "fr-FR", de: "de-DE", vi: "vi-VN", th: "th-TH", ar: "SA",
 };
 
-// 텍스트 문자 체계 자동 감지 함수
-function detectLanguage(text) {
-  if (/[\u3040-\u30ff\u31f0-\u31ff]/.test(text)) return 'ja'; // 일본어 가나
-  if (/[\u4e00-\u9fa5]/.test(text)) return 'zh';             // 한자(중국어)
-  if (/[\uac00-\ud7af\u1100-\u11ff]/.test(text)) return 'ko'; // 한글
-  if (/[\u0600-\u06ff]/.test(text)) return 'ar';             // 아랍어
-  if (/[\u0e00-\u0e7f]/.test(text)) return 'th';             // 태국어
-  if (/[a-zA-Z]/.test(text)) return 'en';                    // 영문/라틴 기본
-  return 'en';
+// 텍스트 내용 기반 언어 자동 감지
+function detectTextLanguage(text) {
+  if (!text) return "en";
+  if (/[\u3040-\u30ff]/.test(text)) return "ja";               // 히라가나/가타카나 -> 일본어
+  if (/[\uac00-\ud7af\u1100-\u11ff]/.test(text)) return "ko"; // 한글 -> 한국어
+  if (/[\u0600-\u06ff]/.test(text)) return "ar";             // 아랍어
+  if (/[\u0e00-\u0e7f]/.test(text)) return "th";             // 태국어
+  if (/[\u4e00-\u9fa5]/.test(text)) return "zh";             // 한자 -> 중국어
+  return "en";
 }
 
-function speakText(text, langCode) {
+function speakText(text) {
   try {
     if (!("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
     
-    // 언어 코드가 불일치할 경우 텍스트 분석을 통한 자동 교정
-    const detected = detectLanguage(text);
-    const finalLang = (langCode && SPEECH_LOCALES[langCode]) ? langCode : detected;
+    const detectedLang = detectTextLanguage(text);
+    const targetLocale = SPEECH_LOCALES[detectedLang] || "en-US";
     
     const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = SPEECH_LOCALES[finalLang] || SPEECH_LOCALES[detected] || "en-US";
+    utter.lang = targetLocale;
+
+    // 지원 음성 엔진 찾아서 매칭
+    const voices = window.speechSynthesis.getVoices();
+    const matchedVoice = voices.find(v => v.lang && v.lang.replace('_', '-').startsWith(targetLocale.split('-')[0]));
+    if (matchedVoice) utter.voice = matchedVoice;
+
     window.speechSynthesis.speak(utter);
   } catch (e) {}
+}
+
+// 음성 목록 미리 로드
+if ("speechSynthesis" in window) {
+  window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
 }
 
 function startVoiceInput(micBtn, draftInput, updateSendBtn) {
   const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognitionCtor) {
-    alert("이 브라우저는 음성 입력을 지원하지 않아요. 크롬 또는 사파리를 사용해보세요.");
+    alert("이 브라우저는 음성 입력을 지원하지 않아요.");
     return;
   }
   const recognition = new SpeechRecognitionCtor();
@@ -156,7 +164,6 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-// ---- State & Socket ----
 let profile = null;
 try {
   const saved = localStorage.getItem(PROFILE_KEY);
@@ -165,15 +172,11 @@ try {
 
 let socket = null;
 let messages = [];
-
 const root = document.getElementById("root");
 
 function render() {
-  if (!profile) {
-    renderJoinScreen();
-  } else {
-    renderChatScreen();
-  }
+  if (!profile) renderJoinScreen();
+  else renderChatScreen();
 }
 
 function renderJoinScreen() {
@@ -291,7 +294,7 @@ function initSocket() {
     renderMessages();
   });
 
-  socket.on("connect_error", (err) => {
+  socket.on("connect_error", () => {
     updateStatus("○ 연결 시도 중...", "#D9A441");
     showError("서버에 연결 중입니다. 잠시만 기다려주세요.");
   });
@@ -319,7 +322,7 @@ function renderMessages() {
 
   container.querySelectorAll(".speak-btn").forEach(function (btn) {
     btn.addEventListener("click", function () {
-      speakText(btn.getAttribute("data-text"), btn.getAttribute("data-lang"));
+      speakText(btn.getAttribute("data-text"));
     });
   });
 }
@@ -327,25 +330,26 @@ function renderMessages() {
 function renderMessageHtml(m) {
   const isMine = m.sender_name === profile.name;
   const color = ribbonColor(m.sender_lang);
-  const sameLang = m.sender_lang === profile.lang;
   const textColor = isMine ? "#0E1116" : "#EDEAE3";
 
+  // 번역본 결정
   const translatedText = (m.translations && m.translations[profile.lang]) || m.original_text;
+  const isIdentical = translatedText.trim() === m.original_text.trim();
 
   let translatedHtml = "";
-  if (!sameLang) {
+  if (!isIdentical) {
     translatedHtml =
       '<div style="display:flex;align-items:center;gap:6px">' +
         '<span>' + escapeHtml(translatedText) + '</span>' +
-        '<button class="speak-btn" data-text="' + escapeHtml(translatedText) + '" data-lang="' + profile.lang + '" style="color:' + textColor + '">🔊</button>' +
+        '<button class="speak-btn" data-text="' + escapeHtml(translatedText) + '" style="color:' + textColor + '">🔊</button>' +
       '</div>';
   }
 
-  const origColor = isMine ? "#0E1116" : (sameLang ? textColor : "#8A93A3");
+  const origColor = isMine ? "#0E1116" : (isIdentical ? textColor : "#8A93A3");
   const originalHtml =
-    '<div class="original-line" style="color:' + origColor + (sameLang ? "" : ";border-top:1px solid " + (isMine ? "#0E1116" : "#333B49") + ";padding-top:4px") + '">' +
+    '<div class="original-line" style="color:' + origColor + (isIdentical ? "" : ";border-top:1px solid " + (isMine ? "rgba(0,0,0,0.15)" : "#333B49") + ";padding-top:4px") + '">' +
       '<span>' + escapeHtml(m.original_text) + '</span>' +
-      '<button class="speak-btn" data-text="' + escapeHtml(m.original_text) + '" data-lang="' + m.sender_lang + '" style="color:' + origColor + '">🔊</button>' +
+      '<button class="speak-btn" data-text="' + escapeHtml(m.original_text) + '" style="color:' + origColor + '">🔊</button>' +
     '</div>';
 
   const metaHtml = isMine ? "" :
@@ -367,11 +371,13 @@ function doSend() {
   if (!text) return;
 
   const tempId = "msg_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
-  
+  // 실제 타이핑된 텍스트의 언어 자동 판별
+  const detectedActualLang = detectTextLanguage(text);
+
   const tempMsg = {
     tempId: tempId,
     sender_name: profile.name,
-    sender_lang: profile.lang,
+    sender_lang: detectedActualLang,
     original_text: text,
     translations: {}
   };
@@ -382,7 +388,7 @@ function doSend() {
     socket.emit("send_message", {
       room: profile.room,
       sender_name: profile.name,
-      sender_lang: profile.lang,
+      sender_lang: detectedActualLang,
       text: text,
       tempId: tempId
     });
