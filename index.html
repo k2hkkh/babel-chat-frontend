@@ -136,7 +136,7 @@
       <div class="field">
         <label>내가 사용할 언어</label>
         <select id="langSelect">
-          <option value="ko" selected>한국어 (Korean)</option>
+          <option value="ko">한국어 (Korean)</option>
           <option value="en">English (영어)</option>
           <option value="ja">日本語 (일본어)</option>
           <option value="zh-CN">中文 (중국어)</option>
@@ -198,7 +198,6 @@
     let myLang = "ko";
     let chatHistory = [];
     
-    // 무제한 음성 인식을 위한 상태 변수
     let recognition = null;
     let userWantsRecording = false;
 
@@ -226,6 +225,14 @@
       
       const savedName = localStorage.getItem('babel_nickname');
       if (savedName) document.getElementById('nameInput').value = savedName;
+
+      // 마지막 사용 언어 불러오기 및 기본값 세팅
+      const savedLang = localStorage.getItem('babel_lang');
+      if (savedLang) {
+        document.getElementById('langSelect').value = savedLang;
+      } else {
+        document.getElementById('langSelect').value = 'ko';
+      }
 
       loadFavorites();
 
@@ -304,7 +311,10 @@
       myName = n;
       myLang = l;
 
+      // 닉네임과 언어 설정 로컬 스토리지에 영구 보존
       localStorage.setItem('babel_nickname', myName);
+      localStorage.setItem('babel_lang', myLang);
+      
       sessionStorage.setItem('babel_active_room', currentRoom);
       sessionStorage.setItem('babel_active_name', myName);
       sessionStorage.setItem('babel_active_lang', myLang);
@@ -352,7 +362,6 @@
 
     function handleSendForm(e) {
       e.preventDefault();
-      // 전송 시 음성 인식이 켜져 있다면 자동 종료
       if (userWantsRecording) {
         toggleSTT();
       }
@@ -427,7 +436,6 @@
       msgs.scrollTop = msgs.scrollHeight;
     }
 
-    // 무제한 음성 입력 토글 및 자동 재시작 로직
     function toggleSTT() {
       const micBtn = document.getElementById('micBtn');
       const input = document.getElementById('msgInput');
@@ -437,7 +445,6 @@
         return;
       }
 
-      // 이미 녹음 중이면 사용자가 수동으로 끔
       if (userWantsRecording) {
         userWantsRecording = false;
         micBtn.classList.remove('recording');
@@ -445,7 +452,6 @@
         return;
       }
 
-      // 녹음 시작
       userWantsRecording = true;
       micBtn.classList.add('recording');
 
@@ -475,17 +481,13 @@
 
       recognition.onerror = (event) => {
         console.warn("STT Error:", event.error);
-        // no-speech 같은 가벼운 에러는 무시하고 계속 유지
       };
 
-      // 브라우저가 침묵으로 인해 자동으로 종료하려 할 때, 사용자가 끄지 않았다면 무한 재시작
       recognition.onend = () => {
         if (userWantsRecording) {
           try {
             recognition.start();
-          } catch (e) {
-            // 이미 켜져 있는 예외 처리
-          }
+          } catch (e) {}
         } else {
           micBtn.classList.remove('recording');
         }
