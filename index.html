@@ -91,9 +91,25 @@
     .original-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; font-size: 11px; margin-top: 6px; opacity: 0.8; border-top: 1px dashed rgba(255,255,255,0.25); padding-top: 4px; }
     .tts-btn { cursor: pointer; font-size: 13px; opacity: 0.85; flex-shrink: 0; padding: 0 2px; }
     
-    .chat-input-area { padding: 12px 16px; background: #14181F; border-top: 1px solid #2A313D; display: flex; gap: 8px; }
-    .chat-input-area input { flex: 1; }
-    .send-btn { background: #3FA9A0; border: none; color: #0E1116; font-weight: bold; padding: 0 16px; border-radius: 8px; cursor: pointer; }
+    .chat-input-area { padding: 10px 14px; background: #14181F; border-top: 1px solid #2A313D; display: flex; gap: 8px; align-items: center; }
+    .input-wrapper { position: relative; flex: 1; display: flex; align-items: center; }
+    .input-wrapper input { width: 100%; padding-right: 36px; }
+    
+    /* 음성 입력 마이크 버튼 */
+    .mic-btn {
+      position: absolute; right: 8px; background: transparent; border: none;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      padding: 4px; border-radius: 50%; color: #8A93A3; transition: all 0.2s;
+    }
+    .mic-btn:hover { color: #3FA9A0; }
+    .mic-btn.recording { color: #E05252; animation: pulse 1.2s infinite; }
+    @keyframes pulse {
+      0% { transform: scale(1); filter: drop-shadow(0 0 2px #E05252); }
+      50% { transform: scale(1.15); filter: drop-shadow(0 0 6px #E05252); }
+      100% { transform: scale(1); filter: drop-shadow(0 0 2px #E05252); }
+    }
+
+    .send-btn { background: #3FA9A0; border: none; color: #0E1116; font-weight: bold; padding: 10px 16px; border-radius: 8px; cursor: pointer; flex-shrink: 0; }
   </style>
 </head>
 <body>
@@ -160,7 +176,17 @@
     <div id="messages" class="chat-messages"></div>
 
     <form class="chat-input-area" onsubmit="handleSendForm(event)">
-      <input type="text" id="msgInput" placeholder="메시지를 입력하세요..." autocomplete="off" />
+      <div class="input-wrapper">
+        <input type="text" id="msgInput" placeholder="메시지를 입력하거나 마이크를 누르세요..." autocomplete="off" />
+        <button type="button" class="mic-btn" id="micBtn" onclick="toggleSTT()" title="음성 입력">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="23"></line>
+            <line x1="8" y1="23" x2="16" y2="23"></line>
+          </svg>
+        </button>
+      </div>
       <button type="submit" class="send-btn">전송</button>
     </form>
   </div>
@@ -172,13 +198,17 @@
     let myName = "";
     let myLang = "ko";
     let chatHistory = [];
+    
+    // STT 관련 변수
+    let recognition = null;
+    let isRecording = false;
 
-    // 클라이언트 브라우저 직접 구글 번역 호출
+    // 문맥 교정 및 오타 보정 강화 구글 번역 호출 함수
     async function clientTranslate(text, sourceLang, targetLang) {
       if (!text || text.trim() === '') return text;
       if (sourceLang === targetLang) return text;
       try {
-        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang || 'auto'}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang || 'auto'}&tl=${targetLang}&dt=t&dt=bd&dt=qc&q=${encodeURIComponent(text)}`;
         const res = await fetch(url);
         if (!res.ok) return text;
         const data = await res.json();
@@ -201,7 +231,6 @@
 
       loadFavorites();
 
-      // 홈 화면 나갔다 복귀 시 자동 재입장 체크
       const activeRoom = sessionStorage.getItem('babel_active_room');
       const activeName = sessionStorage.getItem('babel_active_name');
       const activeLang = sessionStorage.getItem('babel_active_lang');
@@ -350,13 +379,14 @@
       input.focus();
     }
 
+    // 메시지 수신 및 렌더링 (다자간 동기화 보강)
     async function processAndDisplayMessage(data) {
       const msgs = document.getElementById('messages');
       const isMine = data.sender_name === myName;
       
       let displayText = data.original_text;
 
-      // 상대방 메시지가 내 언어와 다르면 브라우저에서 즉시 번역
+      // 상대방의 언어가 내 언어와 다르면 즉시 번역
       if (data.sender_lang !== myLang) {
         displayText = await clientTranslate(data.original_text, data.sender_lang, myLang);
       }
@@ -369,7 +399,6 @@
       const wrap = document.createElement('div');
       wrap.className = `msg-wrap ${isMine ? 'mine' : 'theirs'}`;
 
-      // 듀얼 스피커 버튼 지원 (번역문 스피커 + 원문 스피커)
       let contentHtml = `
         <div class="translated-row">
           <span>${displayText}</span>
@@ -396,6 +425,80 @@
       `;
       msgs.appendChild(wrap);
       msgs.scrollTop = msgs.scrollHeight;
+    }
+
+    // 장시간 연속 음성 인식 및 커서 위치 삽입 로직
+    function toggleSTT() {
+      const micBtn = document.getElementById('micBtn');
+      const input = document.getElementById('msgInput');
+
+      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        alert("현재 브라우저는 음성 입력을 지원하지 않습니다. Chrome 또는 Safari를 사용해 주세요.");
+        return;
+      }
+
+      if (isRecording) {
+        if (recognition) recognition.stop();
+        return;
+      }
+
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new SpeechRecognition();
+
+      const langMap = {
+        'ko': 'ko-KR', 'en': 'en-US', 'ja': 'ja-JP', 'zh-CN': 'zh-CN',
+        'es': 'es-ES', 'fr': 'fr-FR', 'de': 'de-DE', 'vi': 'vi-VN',
+        'th': 'th-TH', 'ar': 'ar-SA'
+      };
+
+      recognition.lang = langMap[myLang] || 'ko-KR';
+      recognition.continuous = true;      // 장시간 연속 음성 입력 가능
+      recognition.interimResults = false;  // 최종 확정된 텍스트만 삽입
+
+      recognition.onstart = () => {
+        isRecording = true;
+        micBtn.classList.add('recording');
+      };
+
+      recognition.onresult = (event) => {
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            const transcript = event.results[i][0].transcript.trim();
+            if (transcript) {
+              insertTextAtCursor(input, transcript + " ");
+            }
+          }
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.warn("STT Error:", event.error);
+        stopSTT();
+      };
+
+      recognition.onend = () => {
+        stopSTT();
+      };
+
+      recognition.start();
+    }
+
+    function stopSTT() {
+      isRecording = false;
+      const micBtn = document.getElementById('micBtn');
+      if (micBtn) micBtn.classList.remove('recording');
+    }
+
+    // 입력창 내 현재 커서(Caret) 위치에 텍스트를 정확히 끼워넣는 함수
+    function insertTextAtCursor(input, textToInsert) {
+      const start = input.selectionStart || 0;
+      const end = input.selectionEnd || 0;
+      const original = input.value;
+
+      input.value = original.substring(0, start) + textToInsert + original.substring(end);
+      const newPos = start + textToInsert.length;
+      input.setSelectionRange(newPos, newPos);
+      input.focus();
     }
 
     function downloadChatLog() {
