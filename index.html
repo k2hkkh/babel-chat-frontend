@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- 캐시 방지 메타 태그: 항상 최신 버전 로드 -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
 <title>Babel Room</title>
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <style>
@@ -40,7 +44,7 @@
   .msg-row.mine { justify-content: flex-end; }
   .msg-inner { max-width: 78%; display: flex; }
   .ribbon { width: 4px; border-radius: 2px; flex-shrink: 0; }
-  .bubble { border-radius: 12px; padding: 9px 13px; font-size: 14px; line-height: 1.5; }
+  .bubble { border-radius: 12px; padding: 9px 13px; font-size: 14px; line-height: 1.5; word-break: break-word; }
   .bubble.theirs { background: #1E2530; color: #EDEAE3; }
   .bubble.mine { background: #3FA9A0; color: #0E1116; }
   .msg-meta { font-size: 11px; font-weight: 700; margin-bottom: 3px; }
@@ -63,13 +67,13 @@
   .speak-btn { background: none; border: none; padding: 0; cursor: pointer; color: inherit; opacity: 0.75; font-size: 13px; vertical-align: middle; }
   .original-line { margin-top: 4px; font-size: 12.5px; opacity: 0.7; display: flex; align-items: center; gap: 6px; }
   .leave-btn { background: none; border: none; color: #5A6272; font-size: 11px; padding: 0 0 10px 18px; align-self: flex-start; cursor: pointer; }
+  .status-badge { font-size: 10px; opacity: 0.7; margin-left: 4px; }
 </style>
 </head>
 <body>
 <div id="root"></div>
 
 <script>
-// Render 백엔드 서버 URL 직접 연결
 const BACKEND_URL = "https://babel-chat-backend.onrender.com";
 const PROFILE_KEY = "mlchat_profile";
 
@@ -109,7 +113,7 @@ function speakText(text, langCode) {
 function startVoiceInput(micBtn, draftInput, updateSendBtn) {
   const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognitionCtor) {
-    alert("이 브라우저는 음성 입력을 지원하지 않아요. 크롬 브라우저를 사용해보세요.");
+    alert("이 브라우저는 음성 입력을 지원하지 않아요. 크롬 또는 사파리를 사용해보세요.");
     return;
   }
   const recognition = new SpeechRecognitionCtor();
@@ -201,9 +205,9 @@ function renderChatScreen() {
     '<div class="chat-header-left"><span style="font-size:18px">🌐</span>' +
     '<span class="brand-title" style="font-size:18px">Babel Room</span>' +
     '<span style="color:#5A6272;font-size:12px;margin-left:8px">👥 ' + escapeHtml(profile.room) + '</span></div>' +
-    '<div class="chat-header-right"><span>' + escapeHtml(profile.name) + ' · <span style="color:' + ribbonColor(profile.lang) + ';font-family:monospace">' + profile.lang + '</span></span></div>' +
+    '<div class="chat-header-right"><span id="server-status" style="font-size:11px;color:#3FA9A0">● 연결됨</span> <span>' + escapeHtml(profile.name) + ' · <span style="color:' + ribbonColor(profile.lang) + ';font-family:monospace">' + profile.lang + '</span></span></div>' +
     '</div>' +
-    '<div class="messages" id="messages"><div class="empty-hint">방에 연결하는 중…</div></div>' +
+    '<div class="messages" id="messages"><div class="empty-hint">대화방에 연결 중...</div></div>' +
     '<div id="error-area"></div>' +
     '<div class="input-bar"><button class="mic-btn" id="mic-btn" title="음성 입력">🎤</button><input type="text" id="draft-input" placeholder="' + langLabel(profile.lang) + '로 메시지 입력…" />' +
     '<button class="send-btn" id="send-btn">➤</button></div>' +
@@ -214,6 +218,7 @@ function renderChatScreen() {
     profile = null;
     try { localStorage.removeItem(PROFILE_KEY); } catch (e) {}
     if (socket) socket.disconnect();
+    messages = [];
     render();
   });
 
@@ -230,12 +235,23 @@ function renderChatScreen() {
   initSocket();
 }
 
+function updateStatus(text, color) {
+  const badge = document.getElementById("server-status");
+  if (badge) {
+    badge.innerText = text;
+    badge.style.color = color;
+  }
+}
+
 function initSocket() {
+  if (socket) return;
   socket = io(BACKEND_URL, {
     transports: ["websocket", "polling"],
+    timeout: 10000,
   });
 
   socket.on("connect", () => {
+    updateStatus("● 연결됨", "#3FA9A0");
     showError(null);
     socket.emit("join_room", {
       room: profile.room,
@@ -244,17 +260,28 @@ function initSocket() {
     });
     const msgBox = document.getElementById("messages");
     if (msgBox && messages.length === 0) {
-      msgBox.innerHTML = '<div class="empty-hint">대화방에 연결되었습니다. 첫 메시지를 보내보세요!</div>';
+      msgBox.innerHTML = '<div class="empty-hint">대화방에 참여했습니다. 첫 메시지를 보내보세요!</div>';
     }
   });
 
   socket.on("receive_message", (data) => {
-    messages.push(data);
+    // 중복 추가 방지 (낙관적 UI로 먼저 넣은 메시지 대체 또는 추가)
+    const existingIndex = messages.findIndex(m => m.tempId && m.tempId === data.tempId);
+    if (existingIndex !== -1) {
+      messages[existingIndex] = data;
+    } else {
+      messages.push(data);
+    }
     renderMessages();
   });
 
   socket.on("connect_error", (err) => {
-    showError("서버 연결 중입니다. 잠시만 기다려주세요...");
+    updateStatus("○ 연결 시도 중...", "#D9A441");
+    showError("서버에 연결 중입니다. 잠시만 기다려주세요.");
+  });
+
+  socket.on("disconnect", () => {
+    updateStatus("○ 연결 끊김", "#C5563E");
   });
 }
 
@@ -287,7 +314,6 @@ function renderMessageHtml(m) {
   const sameLang = m.sender_lang === profile.lang;
   const textColor = isMine ? "#0E1116" : "#EDEAE3";
 
-  // 번역된 텍스트 확인 (백엔드에서 translations 객체로 전달)
   const translatedText = (m.translations && m.translations[profile.lang]) || m.original_text;
 
   let translatedHtml = "";
@@ -322,14 +348,33 @@ function renderMessageHtml(m) {
 function doSend() {
   const input = document.getElementById("draft-input");
   const text = input.value.trim();
-  if (!text || !socket) return;
+  if (!text) return;
+
+  const tempId = "msg_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
   
-  socket.emit("send_message", {
-    room: profile.room,
+  // 1. 내 화면에 즉시 표시 (낙관적 렌더링)
+  const tempMsg = {
+    tempId: tempId,
     sender_name: profile.name,
     sender_lang: profile.lang,
-    text: text,
-  });
+    original_text: text,
+    translations: {}
+  };
+  messages.push(tempMsg);
+  renderMessages();
+
+  // 2. 소켓 전송
+  if (socket && socket.connected) {
+    socket.emit("send_message", {
+      room: profile.room,
+      sender_name: profile.name,
+      sender_lang: profile.lang,
+      text: text,
+      tempId: tempId
+    });
+  } else {
+    showError("서버와 연결이 불안정하여 전송되지 못했습니다.");
+  }
 
   input.value = "";
   document.getElementById("send-btn").classList.remove("active");
