@@ -7,7 +7,13 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>Babel Room - 실시간 다국어 번역 채팅</title>
-  
+
+  <!-- 전체화면 앱(PWA) 모드 -->
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="data:application/manifest+json;utf-8,%7B%22name%22%3A%22Babel%20Room%22%2C%22short_name%22%3A%22Babel%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23000000%22%2C%22theme_color%22%3A%22%23000000%22%7D" />
+
   <script>
     (function() {
       var userAgent = navigator.userAgent.toLowerCase();
@@ -21,6 +27,8 @@
       }
     })();
   </script>
+  
+
 
   <!-- Socket.io 및 실시간 QR코드 생성 라이브러리 -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
