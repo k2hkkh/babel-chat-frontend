@@ -37,9 +37,9 @@
     body { font-family: system-ui, -apple-system, sans-serif; background: #14181F; color: #EDEAE3; }
     input, select, button { font-family: inherit; }
 
-    .screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; position: relative; }
     .card { width: 100%; max-width: 400px; background: #1E2530; border-radius: 16px; padding: 28px 24px; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
-    .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .brand { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
     .brand-title { font-size: 24px; color: #EDEAE3; font-weight: 600; }
     .sub { color: #8A93A3; font-size: 13px; margin: 0 0 20px 0; }
     label { color: #8A93A3; font-size: 12px; display: block; margin-bottom: 6px; }
@@ -152,6 +152,7 @@
     <div class="card">
       <div class="brand">
         <div class="brand-title">Babel Room</div>
+        <button class="icon-btn" onclick="forceHardReload()" title="최신 버전으로 새로고침">🔄 새로고침</button>
       </div>
       <div class="sub">국경 없는 실시간 번역 대화방</div>
 
@@ -198,6 +199,7 @@
       <div class="room-info">
         <span class="status-dot" id="statusDot" title="서버 연결 상태"></span>
         <span class="room-badge" id="displayRoomCode">ROOM-0000</span>
+        <button class="icon-btn" onclick="forceHardReload()" title="최신 버전으로 새로고침">🔄 새로고침</button>
         <button class="icon-btn" onclick="openQRModal()">QR보기</button>
         <button class="icon-btn" id="autoTtsBtn" onclick="toggleAutoTTS()">자동음성: OFF</button>
         <button class="icon-btn" onclick="copyInviteLink()">초대링크</button>
@@ -208,7 +210,6 @@
       </div>
     </div>
 
-    <!-- 빠른 응답 프리셋 -->
     <div class="preset-bar">
       <div class="preset-chip" onclick="sendPreset('안녕하세요! 반갑습니다.')">👋 인사</div>
       <div class="preset-chip" onclick="sendPreset('네, 알겠습니다.')">👌 확인</div>
@@ -240,7 +241,6 @@
     </div>
   </div>
 
-  <!-- QR 코드 모달 창 -->
   <div id="qrModal" class="modal-overlay" onclick="closeQRModal(event)">
     <div class="modal-card" onclick="event.stopPropagation()">
       <div class="modal-title">상대방 초대 QR 코드</div>
@@ -264,7 +264,13 @@
     let autoTTS = false;
     let previewTimer = null;
 
-    // 브라우저 내장 보이스 캐싱
+    // 모바일 캐시 우회 강제 새로고침 함수
+    function forceHardReload() {
+      const url = new URL(window.location.href);
+      url.searchParams.set('_v', Date.now());
+      window.location.href = url.toString();
+    }
+
     let availableVoices = [];
     function loadVoices() {
       if ('speechSynthesis' in window) {
@@ -664,7 +670,6 @@
       a.click();
     }
 
-    // 2중 백업(Fallback) 고음질 현지 발음 TTS 엔진
     function playTTS(text, langCode) {
       if (!text || text.trim() === '') return;
 
@@ -675,7 +680,6 @@
       };
       const targetLang = langMap[langCode] || langCode;
 
-      // 1차 시도: 브라우저 내 정식 현지 Voice 객체 직접 매칭
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
 
@@ -692,7 +696,6 @@
         }
       }
 
-      // 2차 시도 (Fallback): 기기 음성팩 부재/왜곡 시 구글 원어민 오디오 직접 스트리밍
       try {
         const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${langCode}&client=tw-ob&q=${encodeURIComponent(text)}`;
         const audio = new Audio(audioUrl);
