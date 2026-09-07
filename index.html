@@ -2,1340 +2,768 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
+  <!-- 모바일 노치 및 홈 바 영역(Safe Area)을 전체화면으로 활용하기 위한 viewport-fit=cover 적용 -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="theme-color" content="#000000" />
-  <title>생각서랍</title>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>Babel Room - 실시간 다국어 번역 채팅</title>
+  
+  <script>
+    (function() {
+      var userAgent = navigator.userAgent.toLowerCase();
+      var targetUrl = location.href;
+      if (userAgent.indexOf('kakaotalk') > -1) {
+        if (userAgent.indexOf('android') > -1) {
+          location.href = 'intent://' + location.href.replace(/https?:\/\//i, '') + '#Intent;scheme=https;package=com.android.chrome;end';
+        } else if (userAgent.indexOf('iphone') > -1 || userAgent.indexOf('ipad') > -1 || userAgent.indexOf('ipod') > -1) {
+          location.href = 'kakaoweb://openExternal?url=' + encodeURIComponent(targetUrl);
+        }
+      }
+    })();
+  </script>
+
+  <!-- Socket.io 및 실시간 QR코드 생성 라이브러리 -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
   <style>
-    :root {
-      --bg: #000000;
-      --card: #1c1c1e;
-      --surface: #2c2c2e;
-      --primary: #2563eb;
-      --accent: #38bdf8;
-      --danger: #ef4444;
-      --text: #f8fafc;
-      --muted: #8e8e93;
-      --border: #2c2c2e;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
-    
-    html, body {
-      width: 100%;
-      height: 100dvh; /* 모바일 동적 뷰포트 높이 고정 */
-      overflow: hidden;
-      background-color: var(--bg);
-      color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', sans-serif;
-    }
-    body {
-      display: flex;
-      flex-direction: column;
-      /* 상단 노치/다이나믹 아일랜드 대응 */
-      padding-top: env(safe-area-inset-top, 0px);
-    }
-    
-    header {
-      padding: 10px 12px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: var(--bg);
-      border-bottom: 1px solid var(--border);
-      flex-shrink: 0;
-      gap: 6px;
-    }
-    .main-mode-switch {
-      display: flex;
-      background: #141416;
-      padding: 3px;
-      border-radius: 20px;
-      border: 1px solid var(--border);
-      gap: 2px;
-      flex: 1;
-    }
-    .mode-btn {
-      flex: 1;
-      padding: 8px 4px;
-      border-radius: 16px;
-      border: none;
-      background: transparent;
-      color: var(--muted);
-      font-size: clamp(0.78rem, 2.4vw, 0.88rem);
-      font-weight: 700;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
-      white-space: nowrap;
-      transition: all 0.2s;
-    }
-    .mode-btn.active {
-      background: var(--primary);
-      color: #ffffff;
-      box-shadow: 0 2px 8px rgba(37,99,235,0.4);
-    }
-
-    .category-bar {
-      display: flex;
-      padding: 8px 12px;
-      background: #121214;
-      gap: 6px;
-      overflow-x: auto;
-      border-bottom: 1px solid var(--border);
-      flex-shrink: 0;
-    }
-    .category-pill {
-      padding: 5px 12px;
-      border-radius: 14px;
-      background: var(--card);
-      border: 1px solid var(--border);
-      font-size: 0.78rem;
-      color: var(--muted);
-      cursor: pointer;
-      white-space: nowrap;
-      font-weight: 600;
-    }
-    .category-pill.active {
-      background: var(--primary);
-      color: #ffffff;
-      border-color: var(--primary);
-    }
-
-    .view-container {
-      flex: 1;
-      overflow-y: auto;
-      padding: 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
+    html, body { 
+      height: 100%;
+      height: 100dvh; /* 동적 뷰포트 높이 기본 적용 */
+      margin: 0; 
+      overscroll-behavior-y: none;
       -webkit-overflow-scrolling: touch;
     }
-    .empty-canvas {
-      margin: auto;
-      text-align: center;
-      color: #71717a;
-      font-size: 0.95rem;
-      line-height: 1.6;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 12px;
-    }
-    .empty-action-btn {
-      padding: 10px 18px;
-      background: var(--primary);
-      color: #ffffff;
-      border-radius: 20px;
-      font-size: 0.9rem;
-      font-weight: bold;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      box-shadow: 0 4px 12px rgba(37,99,235,0.3);
-    }
-    
-    .thought-card, .plan-big-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .card-header, .plan-big-card-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .card-badge {
-      font-size: 0.75rem;
-      padding: 3px 8px;
-      border-radius: 6px;
-      background: var(--surface);
-      color: var(--accent);
-      font-weight: 600;
-    }
-    .card-time { font-size: 0.75rem; color: var(--muted); }
-    .card-content, .plan-big-title {
-      font-size: clamp(0.92rem, 2.7vw, 1.05rem);
-      line-height: 1.5;
-      white-space: pre-wrap;
-      color: #ffffff;
-      user-select: text;
-    }
-    .status-badge-lg {
-      font-size: 0.75rem;
-      padding: 4px 8px;
-      border-radius: 6px;
-      background: #27272a;
-      color: #e4e4e7;
-      cursor: pointer;
-    }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #14181F; color: #EDEAE3; }
+    input, select, button { font-family: inherit; }
 
-    .media-box {
-      border-radius: 10px;
-      overflow: hidden;
-      background: #000;
-      margin-top: 4px;
-    }
-    .media-box img, .media-box video {
-      width: 100%;
-      max-height: 280px;
-      object-fit: contain;
-      display: block;
-    }
-
-    .card-five-buttons {
-      display: flex;
-      gap: 4px;
-      overflow-x: auto;
-      white-space: nowrap;
-      border-top: 1px solid #27272a;
-      padding-top: 10px;
-    }
-    .five-btn {
-      flex: 1;
-      min-width: 46px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 7px 2px;
-      border-radius: 8px;
-      border: 1px solid #3f3f46;
-      background: #1c1c1e;
-      color: #a1a1aa;
-      font-size: clamp(0.68rem, 1.8vw, 0.74rem);
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .five-btn.active-backlog { background: #1e3a8a; border-color: #3b82f6; color: #ffffff; font-weight: 700; }
-
-    .plan-time-tabs { display: flex; gap: 4px; width: 100%; flex-shrink: 0; }
-    .plan-time-tab {
-      flex: 1;
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 8px 2px;
-      color: var(--muted);
-      font-size: clamp(0.68rem, 2vw, 0.76rem);
-      font-weight: bold;
-      text-align: center;
-      cursor: pointer;
-      white-space: nowrap;
-    }
-    .plan-time-tab.active { background: #1e3a8a; color: #60a5fa; border-color: #3b82f6; }
-    .plan-time-tab.focus-tab.active { background: #9a3412; color: #fdba74; border-color: #f97316; }
-
-    /* 하단 입력바 (safe-area 하단 공백 완벽 대응) */
-    .bottom-bar-wrapper {
-      padding: 8px 14px calc(12px + env(safe-area-inset-bottom, 0px)) 14px;
-      background: var(--bg);
-      position: relative;
-      flex-shrink: 0;
-      border-top: 1px solid #18181b;
-    }
-    .capsule-box {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 30px;
-      padding: 6px 10px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .btn-plus {
-      width: 34px;
-      height: 34px;
-      border-radius: 50%;
-      background: #2c2c2e;
-      border: 1px solid #3f3f46;
-      color: #ffffff;
-      font-size: 1.3rem;
-      line-height: 1;
-      display: flex !important;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: transform 0.2s, background 0.2s;
-      flex-shrink: 0;
-    }
-    .btn-plus.open {
-      transform: rotate(45deg);
-      background: var(--danger);
-      border-color: var(--danger);
-    }
-
-    .main-input {
-      flex: 1;
-      background: transparent;
-      border: none;
-      color: #ffffff;
-      font-size: clamp(0.88rem, 2.6vw, 0.95rem);
-      outline: none;
-      min-height: 24px;
-      max-height: 90px;
-      resize: none;
-      line-height: 1.4;
-      user-select: text;
-    }
-    .btn-mic {
-      background: none;
-      border: none;
-      width: 32px;
-      height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      flex-shrink: 0;
-      transition: all 0.2s;
-    }
-    .btn-mic svg { width: 22px; height: 22px; fill: #8e8e93; transition: fill 0.2s; }
-    .btn-mic.recording svg {
-      fill: #ef4444;
-      animation: pulse-mic 0.9s infinite alternate;
-    }
-    @keyframes pulse-mic {
-      0% { transform: scale(1); filter: drop-shadow(0 0 2px rgba(239,68,68,0.4)); }
-      100% { transform: scale(1.22); filter: drop-shadow(0 0 8px rgba(239,68,68,0.9)); }
-    }
-
-    .btn-action-send {
-      width: 34px;
-      height: 34px;
-      border-radius: 50%;
-      background: #2563eb;
-      border: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #ffffff;
-      font-size: 1.2rem;
-      font-weight: bold;
-      cursor: pointer;
-      flex-shrink: 0;
-    }
-    
-    .plus-menu-popover {
-      display: none;
-      position: absolute;
-      bottom: calc(64px + env(safe-area-inset-bottom, 0px));
-      left: 14px;
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      padding: 8px 6px;
-      flex-direction: column;
-      gap: 4px;
-      z-index: 50;
-      min-width: 200px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.8);
-    }
-    .plus-menu-popover.active { display: flex; }
-    .menu-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 14px;
-      border-radius: 12px;
-      color: #ffffff;
-      font-size: 0.88rem;
-      cursor: pointer;
-      text-decoration: none;
-    }
-    .menu-item:active { background: var(--surface); }
-
-    .modal-backdrop {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100dvh;
-      background: rgba(0,0,0,0.75);
-      z-index: 3000;
-      justify-content: center;
-      align-items: center;
+    /* Safe Area 패딩 대응 */
+    .screen { 
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
       padding: 20px;
+      padding-top: calc(20px + env(safe-area-inset-top, 0px));
+      padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+      position: relative; 
     }
-    .modal-backdrop.active { display: flex; }
-    .pop-card {
-      background: #1c1c1e;
-      border: 1px solid #3a3a3c;
-      border-radius: 18px;
-      padding: 18px;
-      width: 100%;
-      max-width: 340px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
+    .card { width: 100%; max-width: 400px; background: #1E2530; border-radius: 16px; padding: 28px 24px; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
+    .brand { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .brand-title { font-size: 24px; color: #EDEAE3; font-weight: 600; }
+    .sub { color: #8A93A3; font-size: 13px; margin: 0 0 20px 0; }
+    label { color: #8A93A3; font-size: 12px; display: block; margin-bottom: 6px; }
+    .field { margin-bottom: 16px; }
+    .input-row { display: flex; gap: 8px; }
+    input[type=text], select {
+      width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #333B49;
+      background: #14181F; color: #EDEAE3; font-size: 14px; outline: none;
     }
-    .pop-textarea {
-      width: 100%;
-      height: 120px;
-      background: #121214;
-      border: 1px solid #3a3a3c;
-      border-radius: 10px;
-      padding: 10px;
-      color: #fff;
-      font-size: 0.95rem;
-      resize: none;
-      outline: none;
-      user-select: text;
+    input[type=text]:focus, select:focus { border-color: #3FA9A0; }
+    .gen-btn {
+      padding: 0 12px; border-radius: 8px; border: 1px solid #3FA9A0;
+      background: rgba(63, 169, 160, 0.1); color: #3FA9A0; font-size: 12px; cursor: pointer; white-space: nowrap;
     }
-    .pop-btn-row { display: flex; gap: 8px; }
-    .pop-btn {
-      flex: 1;
-      padding: 10px;
-      border-radius: 10px;
-      border: none;
-      font-weight: bold;
-      font-size: 0.9rem;
-      cursor: pointer;
+    .join-btn {
+      width: 100%; padding: 13px; border-radius: 8px; border: none;
+      background: #3FA9A0; color: #0E1116; font-weight: 600; font-size: 15px; cursor: pointer; margin-top: 6px;
     }
-    .pop-btn.cancel { background: #2c2c2e; color: #8e8e93; }
-    .pop-btn.confirm { background: var(--primary); color: #fff; }
-    .pop-btn-choice {
-      width: 100%;
-      padding: 12px;
-      background: #2c2c2e;
-      border: 1px solid #3f3f46;
-      border-radius: 10px;
-      color: #fff;
-      font-size: 0.92rem;
-      font-weight: bold;
-      cursor: pointer;
-      text-align: left;
+    .join-btn:disabled { background: #555; color: #888; cursor: not-allowed; }
+
+    .fav-wrap { margin-top: 20px; border-top: 1px solid #2A313D; padding-top: 16px; }
+    .fav-title { font-size: 12px; color: #8A93A3; margin-bottom: 8px; }
+    .fav-list { display: flex; flex-direction: column; gap: 6px; max-height: 120px; overflow-y: auto; }
+    .fav-item { display: flex; justify-content: space-between; align-items: center; background: #14181F; padding: 8px 12px; border-radius: 6px; font-size: 13px; border: 1px solid #2A313D; }
+    .fav-code { font-weight: bold; color: #3FA9A0; cursor: pointer; }
+    .fav-del { color: #E05252; cursor: pointer; font-size: 12px; }
+
+    /* 대화창 화면: 100dvh로 화면 늘어남/줄어듬 방지 */
+    #chat-screen { 
+      display: none; 
+      flex-direction: column; 
+      height: 100vh;
+      height: 100dvh;
+      max-width: 600px; 
+      margin: 0 auto; 
+      background: #1E2530; 
+      position: relative; 
+    }
+    .chat-header {
+      padding: 10px 14px; 
+      padding-top: calc(10px + env(safe-area-inset-top, 0px));
+      background: #14181F; 
+      border-bottom: 1px solid #2A313D;
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+      gap: 6px;
+    }
+    .room-info { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .room-badge { background: #2A313D; padding: 4px 6px; border-radius: 6px; font-size: 12px; font-weight: bold; color: #3FA9A0; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: #E05252; }
+    .status-dot.online { background: #3FA9A0; }
+    
+    .icon-btn { background: #2A313D; border: 1px solid #333B49; color: #EDEAE3; border-radius: 6px; padding: 5px 8px; font-size: 11px; cursor: pointer; }
+    .icon-btn.active { background: rgba(63, 169, 160, 0.25); border-color: #3FA9A0; color: #3FA9A0; }
+    .exit-btn { background: rgba(224, 82, 82, 0.15); border-color: #E05252; color: #E05252; }
+    
+    .preset-bar {
+      display: flex; gap: 6px; overflow-x: auto; padding: 6px 14px; background: #181E27; border-bottom: 1px solid #2A313D;
+      white-space: nowrap; -webkit-overflow-scrolling: touch;
+    }
+    .preset-chip {
+      background: #252D3A; border: 1px solid #333B49; color: #B0B8C4;
+      font-size: 11px; padding: 4px 10px; border-radius: 14px; cursor: pointer;
+    }
+    .preset-chip:active { background: #3FA9A0; color: #0E1116; }
+
+    .chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .msg-wrap { display: flex; flex-direction: column; max-width: 82%; }
+    .msg-wrap.mine { align-self: flex-end; align-items: flex-end; }
+    .msg-wrap.theirs { align-self: flex-start; align-items: flex-start; }
+    
+    .msg-meta { font-size: 11px; color: #8A93A3; margin-bottom: 3px; display: flex; align-items: center; gap: 6px; }
+    .msg-box { padding: 10px 14px; border-radius: 12px; position: relative; word-break: break-word; }
+    .msg-wrap.mine .msg-box { background: #3FA9A0; color: #0E1116; border-bottom-right-radius: 2px; }
+    .msg-wrap.theirs .msg-box { background: #2A313D; color: #EDEAE3; border-bottom-left-radius: 2px; }
+    
+    .translated-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; font-size: 14px; font-weight: 500; }
+    .original-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; font-size: 11px; margin-top: 6px; opacity: 0.8; border-top: 1px dashed rgba(255,255,255,0.25); padding-top: 4px; }
+    .tts-btn { cursor: pointer; font-size: 13px; opacity: 0.85; flex-shrink: 0; padding: 0 2px; }
+    
+    /* 하단 입력창 영역: Safe Area Inset Bottom 적용 */
+    .input-section { 
+      background: #14181F; 
+      border-top: 1px solid #2A313D; 
+      padding-bottom: env(safe-area-inset-bottom, 0px); /* 아이폰 하단 바 영역 침범 방지 */
+    }
+    .preview-box {
+      padding: 4px 16px; font-size: 11px; color: #3FA9A0; min-height: 18px;
+      display: none; background: #1A212C; border-bottom: 1px dashed #2A313D;
+    }
+    .chat-input-area { 
+      padding: 8px 14px 10px 14px; 
+      display: flex; 
+      gap: 8px; 
+      align-items: center; 
+    }
+    .input-wrapper { position: relative; flex: 1; display: flex; align-items: center; }
+    .input-wrapper input { width: 100%; padding-right: 36px; }
+    
+    .mic-btn {
+      position: absolute; right: 8px; background: transparent; border: none;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      padding: 4px; border-radius: 50%; color: #8A93A3; transition: all 0.2s;
+    }
+    .mic-btn:hover { color: #3FA9A0; }
+    .mic-btn.recording { color: #E05252; animation: pulse 1.2s infinite; }
+    @keyframes pulse {
+      0% { transform: scale(1); filter: drop-shadow(0 0 2px #E05252); }
+      50% { transform: scale(1.15); filter: drop-shadow(0 0 6px #E05252); }
+      100% { transform: scale(1); filter: drop-shadow(0 0 2px #E05252); }
     }
 
-    #memopad-screen {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100dvh;
-      background: #000000;
-      z-index: 2000;
-      overflow: hidden;
-      flex-direction: column;
+    .send-btn { background: #3FA9A0; border: none; color: #0E1116; font-weight: bold; padding: 10px 16px; border-radius: 8px; cursor: pointer; flex-shrink: 0; }
+
+    .modal-overlay {
+      display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.75); z-index: 1000; align-items: center; justify-content: center; padding: 20px;
     }
-    #memopad-screen.active { display: flex; }
-    .memopad-top-bar {
-      padding: 12px 16px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: #1c1c1e;
-      border-bottom: 1px solid #3a3a3c;
-      flex-shrink: 0;
+    .modal-card {
+      background: #1E2530; padding: 24px; border-radius: 16px; text-align: center;
+      max-width: 320px; width: 100%; border: 1px solid #333B49;
     }
-    .memopad-collapsible-toolbar {
-      display: none;
-      background: #141416;
-      border-bottom: 1px solid #3a3a3c;
-      padding: 10px;
-      flex-direction: column;
-      gap: 8px;
-      flex-shrink: 0;
+    .modal-title { font-size: 16px; font-weight: bold; margin-bottom: 6px; color: #EDEAE3; }
+    .modal-sub { font-size: 12px; color: #8A93A3; margin-bottom: 16px; }
+    #qrcode { display: flex; justify-content: center; margin: 12px 0; padding: 10px; background: #fff; border-radius: 8px; }
+    .modal-close {
+      margin-top: 14px; width: 100%; padding: 10px; background: #2A313D;
+      border: 1px solid #333B49; color: #EDEAE3; border-radius: 8px; cursor: pointer; font-size: 13px;
     }
-    .memopad-collapsible-toolbar.active { display: flex; }
-    .pad-palette { display: flex; gap: 8px; align-items: center; overflow-x: auto; }
-    .color-dot { width: 24px; height: 24px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; flex-shrink: 0; }
-    .color-dot.active { border-color: #ffffff; transform: scale(1.15); }
-    .pad-tool-btn {
-      background: var(--surface);
-      border: 1px solid #3a3a3c;
-      color: #fff;
-      padding: 5px 10px;
-      border-radius: 8px;
-      font-size: 0.78rem;
-      font-weight: bold;
-      cursor: pointer;
-      flex-shrink: 0;
-    }
-    .pad-tool-btn.active { background: #3b82f6; border-color: #60a5fa; }
-    #memopad-canvas-container { flex: 1; position: relative; width: 100%; height: 100%; overflow: hidden; background: #000000; }
-    #memopad-canvas { width: 100%; height: 100%; display: block; touch-action: none; }
   </style>
 </head>
 <body>
 
-  <header>
-    <div class="main-mode-switch">
-      <button id="tab-btn-idea" class="mode-btn active" onclick="switchMainMode('idea')">💡 생각서랍</button>
-      <button id="tab-btn-plan" class="mode-btn" onclick="switchMainMode('plan')">📋 나의계획</button>
-      <button class="mode-btn" onclick="openMemoPadDirect()">📑 메모딱지</button>
-    </div>
-  </header>
-
-  <div class="category-bar" id="idea-category-bar">
-    <div class="category-pill active" onclick="selectCategory('첫 생각')">💡 첫 생각</div>
-    <div class="category-pill" onclick="selectCategory('노트')">📝 노트</div>
-    <div class="category-pill" onclick="selectCategory('사진')">📷 사진</div>
-    <div class="category-pill" onclick="selectCategory('동영상')">🎬 동영상</div>
-    <div class="category-pill" onclick="selectCategory('전체')">📂 전체</div>
-  </div>
-
-  <div class="view-container" id="idea-feed-container"></div>
-
-  <div class="view-container" id="plan-feed-container" style="display:none;">
-    <div class="plan-time-tabs">
-      <button class="plan-time-tab active" id="ptab-backlog" onclick="switchPlanSubtab('backlog')">🔄 대기</button>
-      <button class="plan-time-tab focus-tab" id="ptab-focus" onclick="switchPlanSubtab('focus')">⚡ 집중</button>
-      <button class="plan-time-tab" id="ptab-morning" onclick="switchPlanSubtab('morning')">🌅 오전</button>
-      <button class="plan-time-tab" id="ptab-afternoon" onclick="switchPlanSubtab('afternoon')">☀️ 오후</button>
-      <button class="plan-time-tab" id="ptab-evening" onclick="switchPlanSubtab('evening')">🌙 저녁</button>
-      <button class="plan-time-tab" id="ptab-night" onclick="switchPlanSubtab('night')">⏱️ 심야</button>
-    </div>
-    <div id="plan-card-list" style="display:flex; flex-direction:column; gap:12px;"></div>
-  </div>
-
-  <!-- 브라우저 표준 파일 입력기 -->
-  <input type="file" id="input-camera-photo" accept="image/*" capture="environment" onchange="handleDirectCapture(event, '사진')" style="position:absolute; width:1px; height:1px; opacity:0; clip:rect(0,0,0,0);" />
-  <input type="file" id="input-camera-video" accept="video/*" capture="environment" onchange="handleDirectCapture(event, '동영상')" style="position:absolute; width:1px; height:1px; opacity:0; clip:rect(0,0,0,0);" />
-  <input type="file" id="input-album-file" accept="image/*,video/*" multiple onchange="handleDirectCapture(event, null)" style="position:absolute; width:1px; height:1px; opacity:0; clip:rect(0,0,0,0);" />
-
-  <!-- 하단 입력바 -->
-  <div class="bottom-bar-wrapper">
-    <div class="plus-menu-popover" id="plus-menu">
-      <label for="input-camera-photo" class="menu-item" onclick="closePlusMenu()">
-        <span>📷 카메라로 사진 촬영</span>
-      </label>
-      <label for="input-camera-video" class="menu-item" onclick="closePlusMenu()">
-        <span>🎥 비디오로 영상 녹화</span>
-      </label>
-      <label for="input-album-file" class="menu-item" onclick="closePlusMenu()">
-        <span>📁 앨범 / 파일에서 선택</span>
-      </label>
-      <div class="menu-item" onclick="openMemoPadDirect()">
-        <span>📑 메모딱지 작성</span>
+  <div id="lobby-screen" class="screen">
+    <div class="card">
+      <div class="brand">
+        <div class="brand-title">Babel Room</div>
+        <button class="icon-btn" onclick="forceHardReload()" title="최신 버전으로 새로고침">🔄 새로고침</button>
       </div>
-    </div>
-    <div class="capsule-box">
-      <button id="btn-plus" class="btn-plus" type="button" onclick="togglePlusMenu()">＋</button>
-      <textarea id="prompt-input" class="main-input" placeholder="생각을 입력하세요..." rows="1" oninput="handleInputChange(this);"></textarea>
-      <button id="btn-mic" class="btn-mic" type="button" onpointerdown="event.preventDefault()" onclick="toggleVoiceInput()">
-        <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
-      </button>
-      <button id="btn-wave" class="btn-action-send" type="button" onpointerdown="event.preventDefault()" onclick="handleSendAction()">↑</button>
-    </div>
-  </div>
+      <div class="sub">국경 없는 실시간 번역 대화방</div>
 
-  <!-- 수정 팝업 모달 -->
-  <div id="custom-edit-modal" class="modal-backdrop">
-    <div class="pop-card" onclick="event.stopPropagation()">
-      <div style="font-weight:bold; font-size:1.05rem; color:#fff;">✏️ 내용 수정</div>
-      <textarea id="edit-modal-textarea" class="pop-textarea"></textarea>
-      <div class="pop-btn-row">
-        <button class="pop-btn cancel" onclick="closeEditModal()">취소</button>
-        <button class="pop-btn confirm" onclick="confirmEditModal()">저장</button>
+      <div class="field">
+        <label>대화방 코드</label>
+        <div class="input-row">
+          <input type="text" id="roomInput" placeholder="ROOM-0000" />
+          <button class="gen-btn" onclick="generateRoomCode()">새 방 생성</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>내 닉네임</label>
+        <input type="text" id="nameInput" placeholder="이름 또는 고유 닉네임" />
+      </div>
+
+      <div class="field">
+        <label>내가 사용할 언어</label>
+        <select id="langSelect">
+          <option value="ko">한국어 (Korean)</option>
+          <option value="en">English (영어)</option>
+          <option value="ja">日本語 (일본어)</option>
+          <option value="zh-CN">中文 (중국어)</option>
+          <option value="es">Español (스페인어)</option>
+          <option value="vi">Tiếng Việt (베트남어)</option>
+          <option value="th">ไทย (태국어)</option>
+          <option value="de">Deutsch (독일어)</option>
+          <option value="fr">Français (프랑스어)</option>
+          <option value="ar">العربية (아랍어)</option>
+        </select>
+      </div>
+
+      <button class="join-btn" id="joinBtn" onclick="joinRoom()">입장하기</button>
+
+      <div class="fav-wrap">
+        <div class="fav-title">최근 / 즐겨찾기 방 목록</div>
+        <div id="favList" class="fav-list"></div>
       </div>
     </div>
   </div>
 
-  <!-- 시간 슬롯 모달 -->
-  <div id="time-sub-modal" class="modal-backdrop" onclick="closeTimeSlotModal(event)">
-    <div class="pop-card" onclick="event.stopPropagation()">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-weight:bold; font-size:1.05rem; color:#fff;">🕒 계획시간 지정</span>
-        <button onclick="closeTimeSlotModal()" style="background:transparent; border:none; color:#8e8e93; font-size:1.2rem; cursor:pointer;">✕</button>
+  <div id="chat-screen">
+    <div class="chat-header">
+      <div class="room-info">
+        <span class="status-dot" id="statusDot" title="서버 연결 상태"></span>
+        <span class="room-badge" id="displayRoomCode">ROOM-0000</span>
+        <button class="icon-btn" onclick="forceHardReload()" title="최신 버전으로 새로고침">🔄 새로고침</button>
+        <button class="icon-btn" onclick="openQRModal()">QR보기</button>
+        <button class="icon-btn" id="autoTtsBtn" onclick="toggleAutoTTS()">자동음성: OFF</button>
+        <button class="icon-btn" onclick="copyInviteLink()">초대링크</button>
+        <button class="icon-btn" onclick="downloadChatLog()">대화저장</button>
       </div>
-      <div style="display:flex; flex-direction:column; gap:8px;">
-        <button class="pop-btn-choice" onclick="confirmTimeSlotAssign('morning')">🌅 오전</button>
-        <button class="pop-btn-choice" onclick="confirmTimeSlotAssign('afternoon')">☀️ 오후</button>
-        <button class="pop-btn-choice" onclick="confirmTimeSlotAssign('evening')">🌙 저녁</button>
-        <button class="pop-btn-choice" onclick="confirmTimeSlotAssign('night')">⏱️ 심야</button>
+      <div>
+        <button class="icon-btn exit-btn" onclick="leaveRoom()">나가기</button>
       </div>
+    </div>
+
+    <div class="preset-bar">
+      <div class="preset-chip" onclick="sendPreset('안녕하세요! 반갑습니다.')">👋 인사</div>
+      <div class="preset-chip" onclick="sendPreset('네, 알겠습니다.')">👌 확인</div>
+      <div class="preset-chip" onclick="sendPreset('목적지에 도착했습니다.')">📍 도착</div>
+      <div class="preset-chip" onclick="sendPreset('결제는 카드로 도와드리겠습니다.')">💳 카드결제</div>
+      <div class="preset-chip" onclick="sendPreset('영수증 필요하신가요?')">🧾 영수증</div>
+      <div class="preset-chip" onclick="sendPreset('잠시만 기다려 주세요.')">⏳ 대기</div>
+      <div class="preset-chip" onclick="sendPreset('감사합니다. 좋은 하루 되세요!')">✨ 감사</div>
+    </div>
+
+    <div id="messages" class="chat-messages"></div>
+
+    <div class="input-section">
+      <div id="previewBox" class="preview-box"></div>
+      <form class="chat-input-area" onsubmit="handleSendForm(event)">
+        <div class="input-wrapper">
+          <input type="text" id="msgInput" placeholder="메시지를 입력하거나 마이크를 누르세요..." autocomplete="off" oninput="handlePreview(this.value)" />
+          <button type="button" class="mic-btn" id="micBtn" onclick="toggleSTT()" title="음성 입력 토글">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+          </button>
+        </div>
+        <button type="submit" class="send-btn">전송</button>
+      </form>
     </div>
   </div>
 
-  <!-- 메모딱지 화면 -->
-  <div id="memopad-screen">
-    <div class="memopad-top-bar">
-      <button class="pad-tool-btn" onclick="togglePadToolbar()">⚙️ 도구 상자</button>
-      <div style="display:flex; gap:8px;">
-        <button onclick="saveMemoPadToDrawer()" style="background:var(--primary); color:#fff; border:none; padding:6px 14px; border-radius:8px; font-size:0.82rem; font-weight:bold; cursor:pointer;">저장</button>
-        <button onclick="closeMemoPadDirect()" style="background:var(--surface); color:#fff; border:none; width:28px; height:28px; border-radius:50%; font-size:0.85rem; cursor:pointer;">✕</button>
-      </div>
-    </div>
-
-    <div id="memopad-collapsible-toolbar" class="memopad-collapsible-toolbar">
-      <div class="pad-palette">
-        <div class="color-dot active" style="background:#ffffff;" onclick="setPadColor('#ffffff', this)"></div>
-        <div class="color-dot" style="background:#facc15;" onclick="setPadColor('#facc15', this)"></div>
-        <div class="color-dot" style="background:#38bdf8;" onclick="setPadColor('#38bdf8', this)"></div>
-        <div class="color-dot" style="background:#ef4444;" onclick="setPadColor('#ef4444', this)"></div>
-        <div style="width:1px; height:20px; background:#3a3a3c; margin:0 4px;"></div>
-        <button id="pad-eraser-btn" class="pad-tool-btn" onclick="togglePadEraser()">🧹 지우개</button>
-        <button class="pad-tool-btn" onclick="undoPadStroke()">↩️ 되돌리기</button>
-        <button class="pad-tool-btn" onclick="clearPadCanvas()">🔄 전체삭제</button>
-      </div>
-      <div style="display:flex; align-items:center; background:#121214; border-radius:10px; padding:4px 8px; border:1px solid #3a3a3c; gap:6px;">
-        <input id="memopad-text-input" type="text" placeholder="메모할 텍스트 입력..." style="flex:1; background:transparent; border:none; color:#fff; font-size:0.88rem; outline:none;" />
-        <button id="btn-pad-mic" class="btn-mic" type="button" onpointerdown="event.preventDefault()" onclick="togglePadVoiceInput()" title="메모딱지 음성입력">
-          <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
-        </button>
-      </div>
-    </div>
-
-    <div id="memopad-canvas-container">
-      <canvas id="memopad-canvas"></canvas>
+  <div id="qrModal" class="modal-overlay" onclick="closeQRModal(event)">
+    <div class="modal-card" onclick="event.stopPropagation()">
+      <div class="modal-title">상대방 초대 QR 코드</div>
+      <div class="modal-sub">스마트폰 기본 카메라로 비추면 바로 입장합니다.</div>
+      <div id="qrcode"></div>
+      <div style="font-size: 13px; font-weight: bold; color: #3FA9A0; margin-top: 8px;" id="qrRoomText"></div>
+      <button class="modal-close" onclick="closeQRModal()">닫기</button>
     </div>
   </div>
 
   <script>
-    const DB_NAME = 'IdeaDrawerDB';
-    const DB_VERSION = 1;
-    let dbInstance = null;
-
-    function initDB() {
-      return new Promise((resolve, reject) => {
-        if (dbInstance) return resolve(dbInstance);
-        const req = indexedDB.open(DB_NAME, DB_VERSION);
-        req.onupgradeneeded = (e) => {
-          const db = e.target.result;
-          if (!db.objectStoreNames.contains('thoughts')) {
-            db.createObjectStore('thoughts', { keyPath: 'id' });
-          }
-          if (!db.objectStoreNames.contains('plans')) {
-            db.createObjectStore('plans', { keyPath: 'id' });
-          }
-        };
-        req.onsuccess = (e) => {
-          dbInstance = e.target.result;
-          resolve(dbInstance);
-        };
-        req.onerror = (e) => reject(e.target.error);
-      });
-    }
-
-    async function dbGetAll(storeName) {
-      const db = await initDB();
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, 'readonly');
-        const store = tx.objectStore(storeName);
-        const req = store.getAll();
-        req.onsuccess = () => resolve(req.result || []);
-        req.onerror = () => reject(req.error);
-      });
-    }
-
-    async function dbPut(storeName, item) {
-      const db = await initDB();
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, 'readwrite');
-        const store = tx.objectStore(storeName);
-        store.put(item);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
-    }
-
-    async function dbDelete(storeName, id) {
-      const db = await initDB();
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, 'readwrite');
-        const store = tx.objectStore(storeName);
-        store.delete(id);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
-    }
-
-    let currentMainMode = 'idea';
-    let currentCategory = '첫 생각';
-    let currentPlanSubtab = 'backlog';
-    let targetSlotItemId = null, targetSlotSource = 'thought';
-    let editingTargetId = null, editingTargetType = 'thought';
-
-    function switchMainMode(mode) {
-      currentMainMode = mode;
-      document.getElementById('tab-btn-idea').classList.toggle('active', mode === 'idea');
-      document.getElementById('tab-btn-plan').classList.toggle('active', mode === 'plan');
-      document.getElementById('idea-category-bar').style.display = (mode === 'idea') ? 'flex' : 'none';
-      document.getElementById('idea-feed-container').style.display = (mode === 'idea') ? 'flex' : 'none';
-      document.getElementById('plan-feed-container').style.display = (mode === 'plan') ? 'flex' : 'none';
-      document.getElementById('btn-plus').style.display = (mode === 'idea') ? 'flex' : 'none';
-      if (mode === 'idea') renderFeed(); else renderPlanView();
-    }
-
-    function selectCategory(cat) {
-      currentCategory = cat;
-      document.querySelectorAll('.category-pill').forEach(p => p.classList.toggle('active', p.innerText.includes(cat)));
-      renderFeed();
-    }
-
-    function togglePlusMenu() {
-      const menu = document.getElementById('plus-menu');
-      const btn = document.getElementById('btn-plus');
-      menu.classList.toggle('active');
-      btn.classList.toggle('open');
-    }
-
-    function closePlusMenu() {
-      document.getElementById('plus-menu').classList.remove('active');
-      document.getElementById('btn-plus').classList.remove('open');
-    }
-
-    async function handleDirectCapture(event, defaultType) {
-      const files = event.target.files;
-      if (!files || files.length === 0) return;
-
-      const input = document.getElementById('prompt-input');
-      const extraText = input.value.trim();
-
-      for (const file of Array.from(files)) {
-        const isVid = file.type.startsWith('video');
-        const finalType = defaultType || (isVid ? '동영상' : '사진');
-        const dataUrl = await readFileDataURL(file);
-        const mediaObj = { type: finalType, data: dataUrl, isVideo: isVid };
-
-        if (currentMainMode === 'plan') {
-          const plan = {
-            id: Date.now() + Math.random(),
-            title: extraText || (finalType + ' 메모'),
-            status: '대기',
-            timeSlot: (currentPlanSubtab === 'focus' || currentPlanSubtab === 'backlog') ? 'none' : currentPlanSubtab,
-            isFocus: currentPlanSubtab === 'focus',
-            mediaList: [mediaObj],
-            updatedAt: new Date().toLocaleDateString()
-          };
-          await dbPut('plans', plan);
-          renderPlanView();
-        } else {
-          await saveThought(finalType, extraText, [mediaObj]);
-          selectCategory(defaultType || '전체');
-        }
-      }
-
-      input.value = '';
-      input.style.height = 'auto';
-      event.target.value = '';
-    }
-
-    function readFileDataURL(file) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target.result);
-        reader.onerror = (e) => reject(e);
-        reader.readAsDataURL(file);
-      });
-    }
-
-    function handleInputChange(textarea) {
-      textarea.style.height = 'auto';
-      textarea.style.height = Math.min(textarea.scrollHeight, 90) + 'px';
-    }
-
-    async function handleSendAction() {
-      const input = document.getElementById('prompt-input');
-      const text = input.value.trim();
-      if (isVoiceRecording) toggleVoiceInput();
-
-      if (!text) return toggleVoiceInput();
-
-      if (currentMainMode === 'idea') {
-        await saveThought('노트', text, []);
-        selectCategory('노트');
-      } else {
-        await savePlanToBacklog(text);
-        renderPlanView();
-      }
-      input.value = '';
-      input.style.height = 'auto';
-    }
-
+    const BACKEND_URL = "https://babel-chat-backend.onrender.com";
+    let socket = null;
+    let currentRoom = "";
+    let myName = "";
+    let myLang = "ko";
+    let chatHistory = [];
+    
     let recognition = null;
-    let isVoiceRecording = false;
+    let userWantsRecording = false;
+    let autoTTS = false;
+    let previewTimer = null;
 
-    function toggleVoiceInput() {
-      closePlusMenu();
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) {
-        alert('현재 브라우저에서는 음성 인식을 지원하지 않습니다.');
-        return;
+    function forceHardReload() {
+      const url = new URL(window.location.href);
+      url.searchParams.set('_v', Date.now());
+      window.location.href = url.toString();
+    }
+
+    let availableVoices = [];
+    function loadVoices() {
+      if ('speechSynthesis' in window) {
+        availableVoices = window.speechSynthesis.getVoices();
       }
+    }
+    if ('speechSynthesis' in window) {
+      loadVoices();
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
 
-      const micBtn = document.getElementById('btn-mic');
-
-      if (isVoiceRecording) {
-        isVoiceRecording = false;
-        if (recognition) recognition.stop();
-        micBtn.classList.remove('recording');
-        return;
-      }
-
-      if (isPadVoiceRecording) togglePadVoiceInput();
-
+    async function clientTranslate(text, sourceLang, targetLang) {
+      if (!text || text.trim() === '') return text;
+      if (sourceLang === targetLang) return text;
       try {
-        recognition = new SpeechRecognition();
-        recognition.lang = 'ko-KR';
-        recognition.continuous = true;
-        recognition.interimResults = false;
-
-        isVoiceRecording = true;
-        micBtn.classList.add('recording');
-
-        recognition.onresult = function(event) {
-          const input = document.getElementById('prompt-input');
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-              const transcript = event.results[i][0].transcript.trim();
-              if (transcript) {
-                insertTextAtCursor(input, transcript);
-              }
-            }
-          }
-        };
-
-        recognition.onerror = function(event) {
-          console.warn('Speech error:', event.error);
-          if (event.error === 'not-allowed') {
-            alert('마이크 사용 권한이 필요합니다.');
-            isVoiceRecording = false;
-            micBtn.classList.remove('recording');
-          }
-        };
-
-        recognition.onend = function() {
-          if (isVoiceRecording) {
-            try { recognition.start(); } catch (e) {}
-          } else {
-            micBtn.classList.remove('recording');
-          }
-        };
-
-        recognition.start();
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang || 'auto'}&tl=${targetLang}&dt=t&dt=bd&dt=qc&q=${encodeURIComponent(text)}`;
+        const res = await fetch(url);
+        if (!res.ok) return text;
+        const data = await res.json();
+        if (data && data[0]) {
+          return data[0].map(item => item[0]).filter(Boolean).join('');
+        }
+        return text;
       } catch (err) {
-        console.error('Speech error:', err);
-        isVoiceRecording = false;
-        micBtn.classList.remove('recording');
+        return text;
       }
     }
 
-    let padRecognition = null;
-    let isPadVoiceRecording = false;
-
-    function togglePadVoiceInput() {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) {
-        alert('현재 브라우저에서는 음성 인식을 지원하지 않습니다.');
-        return;
-      }
-
-      const padMicBtn = document.getElementById('btn-pad-mic');
-
-      if (isPadVoiceRecording) {
-        isPadVoiceRecording = false;
-        if (padRecognition) padRecognition.stop();
-        padMicBtn.classList.remove('recording');
-        return;
-      }
-
-      if (isVoiceRecording) toggleVoiceInput();
-
-      try {
-        padRecognition = new SpeechRecognition();
-        padRecognition.lang = 'ko-KR';
-        padRecognition.continuous = true;
-        padRecognition.interimResults = false;
-
-        isPadVoiceRecording = true;
-        padMicBtn.classList.add('recording');
-
-        padRecognition.onresult = function(event) {
-          const input = document.getElementById('memopad-text-input');
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-              const transcript = event.results[i][0].transcript.trim();
-              if (transcript) {
-                insertTextAtCursor(input, transcript);
-              }
-            }
-          }
-        };
-
-        padRecognition.onerror = function(event) {
-          console.warn('Pad speech error:', event.error);
-          if (event.error === 'not-allowed') {
-            alert('마이크 사용 권한이 필요합니다.');
-            isPadVoiceRecording = false;
-            padMicBtn.classList.remove('recording');
-          }
-        };
-
-        padRecognition.onend = function() {
-          if (isPadVoiceRecording) {
-            try { padRecognition.start(); } catch (e) {}
-          } else {
-            padMicBtn.classList.remove('recording');
-          }
-        };
-
-        padRecognition.start();
-      } catch (err) {
-        console.error('Pad speech error:', err);
-        isPadVoiceRecording = false;
-        padMicBtn.classList.remove('recording');
-      }
-    }
-
-    function insertTextAtCursor(element, textToInsert) {
-      const start = element.selectionStart ?? element.value.length;
-      const end = element.selectionEnd ?? element.value.length;
-      const val = element.value;
-
-      const needSpaceBefore = start > 0 && !/[\s\n]/.test(val[start - 1]);
-      const needSpaceAfter = end < val.length && !/[\s\n]/.test(val[end]);
-
-      const formatted = (needSpaceBefore ? ' ' : '') + textToInsert + (needSpaceAfter ? ' ' : '');
+    window.addEventListener('DOMContentLoaded', () => {
+      const params = new URLSearchParams(window.location.search);
+      const roomParam = params.get('room');
+      if (roomParam) document.getElementById('roomInput').value = roomParam;
       
-      element.value = val.substring(0, start) + formatted + val.substring(end);
-      
-      const newPos = start + formatted.length;
-      element.selectionStart = newPos;
-      element.selectionEnd = newPos;
-      element.focus();
-      if (element.tagName.toLowerCase() === 'textarea') {
-        handleInputChange(element);
-      }
-    }
+      const savedName = localStorage.getItem('babel_nickname');
+      if (savedName) document.getElementById('nameInput').value = savedName;
 
-    async function saveThought(cat, content, media) {
-      const item = {
-        id: Date.now() + Math.random(),
-        category: cat,
-        content: content || '',
-        mediaList: media || [],
-        time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
-      };
-      await dbPut('thoughts', item);
-      renderFeed();
-    }
-
-    async function savePlanToBacklog(title) {
-      if (!title || !title.trim()) return;
-      const item = {
-        id: Date.now() + Math.random(),
-        title: title.trim(),
-        status: '대기',
-        timeSlot: 'none',
-        isFocus: false,
-        mediaList: [],
-        updatedAt: new Date().toLocaleDateString()
-      };
-      await dbPut('plans', item);
-      switchPlanSubtab('backlog');
-    }
-
-    async function transferThoughtDirect(id, type) {
-      const thoughts = await dbGetAll('thoughts');
-      const item = thoughts.find(t => t.id === id);
-      if (!item) return;
-
-      const plan = {
-        id: Date.now() + Math.random(),
-        title: item.content || (item.mediaList?.length ? '미디어 메모' : '메모'),
-        status: '대기',
-        timeSlot: 'none',
-        isFocus: (type === 'focus'),
-        mediaList: item.mediaList || [],
-        updatedAt: new Date().toLocaleDateString()
-      };
-      await dbPut('plans', plan);
-      await dbDelete('thoughts', id);
-      renderFeed();
-    }
-
-    async function reassignPlanSlotDirect(id, type) {
-      const plans = await dbGetAll('plans');
-      const item = plans.find(p => p.id === id);
-      if (item) {
-        if (type === 'focus') item.isFocus = !item.isFocus;
-        else if (type === 'backlog') { item.isFocus = false; item.timeSlot = 'none'; }
-        await dbPut('plans', item);
-        renderPlanView();
-      }
-    }
-
-    function openTimeSlotModal(id, source) {
-      targetSlotItemId = id;
-      targetSlotSource = source;
-      document.getElementById('time-sub-modal').classList.add('active');
-    }
-
-    function closeTimeSlotModal(e) {
-      if (e && e.target && e.target.id !== 'time-sub-modal') return;
-      document.getElementById('time-sub-modal').classList.remove('active');
-      targetSlotItemId = null;
-    }
-
-    async function confirmTimeSlotAssign(chosenSlot) {
-      if (!targetSlotItemId) return;
-      if (targetSlotSource === 'thought') {
-        const thoughts = await dbGetAll('thoughts');
-        const item = thoughts.find(t => t.id === targetSlotItemId);
-        if (item) {
-          const plan = {
-            id: Date.now() + Math.random(),
-            title: item.content || '메모',
-            status: '대기',
-            timeSlot: chosenSlot,
-            isFocus: false,
-            mediaList: item.mediaList || [],
-            updatedAt: new Date().toLocaleDateString()
-          };
-          await dbPut('plans', plan);
-          await dbDelete('thoughts', targetSlotItemId);
-          renderFeed();
-        }
+      const savedLang = localStorage.getItem('babel_lang');
+      if (savedLang) {
+        document.getElementById('langSelect').value = savedLang;
       } else {
-        const plans = await dbGetAll('plans');
-        const item = plans.find(p => p.id === targetSlotItemId);
-        if (item) {
-          item.isFocus = false;
-          item.timeSlot = chosenSlot;
-          await dbPut('plans', item);
-          renderPlanView();
-        }
-      }
-      document.getElementById('time-sub-modal').classList.remove('active');
-      targetSlotItemId = null;
-    }
-
-    async function openEditModal(id, type) {
-      editingTargetId = id;
-      editingTargetType = type;
-      const modal = document.getElementById('custom-edit-modal');
-      const textarea = document.getElementById('edit-modal-textarea');
-      
-      if (type === 'thought') {
-        const list = await dbGetAll('thoughts');
-        const item = list.find(i => i.id === id);
-        textarea.value = item ? (item.content || '') : '';
-      } else {
-        const list = await dbGetAll('plans');
-        const item = list.find(p => p.id === id);
-        textarea.value = item ? (item.title || '') : '';
-      }
-      modal.classList.add('active');
-    }
-
-    function closeEditModal() {
-      document.getElementById('custom-edit-modal').classList.remove('active');
-      editingTargetId = null;
-    }
-
-    async function confirmEditModal() {
-      const newVal = document.getElementById('edit-modal-textarea').value.trim();
-      if (!editingTargetId) return;
-      
-      if (editingTargetType === 'thought') {
-        const list = await dbGetAll('thoughts');
-        const item = list.find(i => i.id === editingTargetId);
-        if (item) {
-          item.content = newVal;
-          await dbPut('thoughts', item);
-          renderFeed();
-        }
-      } else {
-        const list = await dbGetAll('plans');
-        const item = list.find(p => p.id === editingTargetId);
-        if (item) {
-          item.title = newVal;
-          await dbPut('plans', item);
-          renderPlanView();
-        }
-      }
-      closeEditModal();
-    }
-
-    async function renderFeed() {
-      const list = (await dbGetAll('thoughts')).reverse();
-      const feed = document.getElementById('idea-feed-container');
-      
-      if (currentCategory === '첫 생각') {
-        feed.innerHTML = `
-          <div class="empty-canvas">
-            <div>💡 떠오르는 생각을 기록하세요.<br/>저장 즉시 서랍으로 들어갑니다.</div>
-          </div>`;
-        return;
+        document.getElementById('langSelect').value = 'ko';
       }
 
-      if (currentCategory === '사진') {
-        const photoList = list.filter(i => (i.category || '').includes('사진') || (i.mediaList && i.mediaList.some(m => !m.isVideo)));
-        if (photoList.length === 0) {
-          feed.innerHTML = `
-            <div class="empty-canvas">
-              <div>[사진] 서랍에 보관된 사진이 없습니다.</div>
-              <label for="input-camera-photo" class="empty-action-btn">📷 지금 사진 촬영하기</label>
-            </div>`;
-          return;
-        }
-      }
+      loadFavorites();
 
-      if (currentCategory === '동영상') {
-        const videoList = list.filter(i => (i.category || '').includes('동영상') || (i.mediaList && i.mediaList.some(m => m.isVideo)));
-        if (videoList.length === 0) {
-          feed.innerHTML = `
-            <div class="empty-canvas">
-              <div>[동영상] 서랍에 보관된 영상이 없습니다.</div>
-              <label for="input-camera-video" class="empty-action-btn">🎥 지금 영상 녹화하기</label>
-            </div>`;
-          return;
-        }
-      }
-      
-      const filtered = (currentCategory === '전체') ? list : list.filter(i => (i.category || '').includes(currentCategory));
-      if (filtered.length === 0) {
-        feed.innerHTML = `<div class="empty-canvas"><div>[${currentCategory}] 카테고리에 저장된 생각이 없습니다.</div></div>`;
-        return;
-      }
-
-      feed.innerHTML = filtered.map(item => `
-        <div class="thought-card">
-          <div class="card-header">
-            <span class="card-badge">${item.category || '노트'}</span>
-            <span class="card-time">${item.time || ''}</span>
-          </div>
-          ${item.mediaList && item.mediaList.length > 0 ? `
-            <div class="media-box">
-              ${item.mediaList.map(m => m.isVideo 
-                ? `<video src="${m.data}" controls playsinline></video>` 
-                : `<img src="${m.data}" />`).join('')}
-            </div>
-          ` : ''}
-          ${item.content ? `<div class="card-content">${item.content}</div>` : ''}
-          <div class="card-five-buttons">
-            <button class="five-btn active-backlog" onclick="transferThoughtDirect(${item.id}, 'backlog')">🔄 대기</button>
-            <button class="five-btn" onclick="openTimeSlotModal(${item.id}, 'thought')">🕒 계획</button>
-            <button class="five-btn" onclick="transferThoughtDirect(${item.id}, 'focus')">⚡ 집중</button>
-            <button class="five-btn" onclick="openEditModal(${item.id}, 'thought')">✏️ 수정</button>
-            <button class="five-btn" onclick="navigator.clipboard.writeText('${(item.content||'').replace(/'/g, "\\'")}'); alert('복사되었습니다.');">📋 복사</button>
-            <button class="five-btn" style="color:#f87171;" onclick="deleteThoughtItem(${item.id})">🗑️ 삭제</button>
-          </div>
-        </div>
-      `).join('');
-    }
-
-    async function deleteThoughtItem(id) {
-      await dbDelete('thoughts', id);
-      renderFeed();
-    }
-
-    function switchPlanSubtab(tab) {
-      currentPlanSubtab = tab;
-      document.querySelectorAll('.plan-time-tab').forEach(b => b.classList.remove('active'));
-      const cur = document.getElementById(`ptab-${tab}`);
-      if (cur) cur.classList.add('active');
-      renderPlanView();
-    }
-
-    async function renderPlanView() {
-      const list = (await dbGetAll('plans')).reverse();
-      const container = document.getElementById('plan-card-list');
-      let filtered = [];
-      if (currentPlanSubtab === 'focus') filtered = list.filter(p => p.isFocus);
-      else if (currentPlanSubtab === 'backlog') filtered = list.filter(p => !p.isFocus && (!p.timeSlot || p.timeSlot === 'none'));
-      else filtered = list.filter(p => !p.isFocus && p.timeSlot === currentPlanSubtab);
-
-      if (filtered.length === 0) {
-        container.innerHTML = '<div class="empty-canvas" style="padding:40px 0;">해당 탭에 일과가 없습니다.</div>';
-        return;
-      }
-
-      container.innerHTML = filtered.map(p => `
-        <div class="plan-big-card">
-          <div class="plan-big-card-top">
-            <span class="status-badge-lg" onclick="togglePlanStatus(${p.id})">${p.status}</span>
-            <div class="plan-big-title">${p.title}</div>
-          </div>
-          ${p.mediaList && p.mediaList.length > 0 ? `
-            <div class="media-box">
-              ${p.mediaList.map(m => m.isVideo 
-                ? `<video src="${m.data}" controls playsinline></video>` 
-                : `<img src="${m.data}" />`).join('')}
-            </div>
-          ` : ''}
-          <div class="card-five-buttons">
-            <button class="five-btn active-backlog" onclick="reassignPlanSlotDirect(${p.id}, 'backlog')">🔄 대기</button>
-            <button class="five-btn" onclick="openTimeSlotModal(${p.id}, 'plan')">🕒 계획</button>
-            <button class="five-btn" onclick="reassignPlanSlotDirect(${p.id}, 'focus')">⚡ 집중</button>
-            <button class="five-btn" onclick="openEditModal(${p.id}, 'plan')">✏️ 수정</button>
-            <button class="five-btn" style="color:#f87171;" onclick="deletePlanItem(${p.id})">🗑️ 삭제</button>
-          </div>
-        </div>
-      `).join('');
-    }
-
-    async function togglePlanStatus(id) {
-      const plans = await dbGetAll('plans');
-      const item = plans.find(p => p.id === id);
-      if (item) {
-        item.status = (item.status === '대기' ? '진행중' : '대기');
-        await dbPut('plans', item);
-        renderPlanView();
-      }
-    }
-
-    async function deletePlanItem(id) {
-      await dbDelete('plans', id);
-      renderPlanView();
-    }
-
-    let padCanvas, padCtx, isDrawing = false, padColor = '#ffffff', isEraser = false, historyArr = [];
-
-    function openMemoPadDirect() {
-      closePlusMenu();
-      const screen = document.getElementById('memopad-screen');
-      screen.classList.add('active');
-      padCanvas = document.getElementById('memopad-canvas');
-      padCtx = padCanvas.getContext('2d');
-      
-      requestAnimationFrame(() => {
-        const container = document.getElementById('memopad-canvas-container');
-        const rect = container.getBoundingClientRect();
-        padCanvas.width = Math.round(rect.width);
-        padCanvas.height = Math.round(rect.height);
-        
-        padCtx.fillStyle = '#000000';
-        padCtx.fillRect(0, 0, padCanvas.width, padCanvas.height);
-        padCtx.lineCap = 'round';
-        padCtx.lineJoin = 'round';
-        setPadColor('#ffffff', document.querySelector('.color-dot'));
-        historyArr = [];
-      });
-    }
-
-    function closeMemoPadDirect() {
-      if (isPadVoiceRecording) togglePadVoiceInput();
-      document.getElementById('memopad-screen').classList.remove('active');
-      document.getElementById('memopad-collapsible-toolbar').classList.remove('active');
-    }
-
-    function togglePadToolbar() {
-      const toolbar = document.getElementById('memopad-collapsible-toolbar');
-      toolbar.classList.toggle('active');
-      setTimeout(() => {
-        const container = document.getElementById('memopad-canvas-container');
-        const rect = container.getBoundingClientRect();
-        if (rect.width > 0 && rect.height > 0) {
-          const imgData = padCtx.getImageData(0, 0, padCanvas.width, padCanvas.height);
-          padCanvas.width = Math.round(rect.width);
-          padCanvas.height = Math.round(rect.height);
-          padCtx.fillStyle = '#000000';
-          padCtx.fillRect(0, 0, padCanvas.width, padCanvas.height);
-          padCtx.putImageData(imgData, 0, 0);
-          padCtx.lineCap = 'round';
-          padCtx.lineJoin = 'round';
-          padCtx.strokeStyle = isEraser ? '#000000' : padColor;
-          padCtx.lineWidth = isEraser ? 24 : 3.5;
-        }
-      }, 50);
-    }
-
-    function setPadColor(color, el) {
-      padColor = color;
-      isEraser = false;
-      document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
-      if (el) el.classList.add('active');
-      document.getElementById('pad-eraser-btn').classList.remove('active');
-      padCtx.strokeStyle = padColor;
-      padCtx.lineWidth = 3.5;
-    }
-
-    function togglePadEraser() {
-      isEraser = !isEraser;
-      document.getElementById('pad-eraser-btn').classList.toggle('active', isEraser);
-      padCtx.strokeStyle = isEraser ? '#000000' : padColor;
-      padCtx.lineWidth = isEraser ? 24 : 3.5;
-    }
-
-    function saveCanvasState() {
-      if (historyArr.length > 20) historyArr.shift();
-      historyArr.push(padCtx.getImageData(0, 0, padCanvas.width, padCanvas.height));
-    }
-
-    function undoPadStroke() {
-      if (historyArr.length > 0) padCtx.putImageData(historyArr.pop(), 0, 0);
-    }
-
-    function clearPadCanvas() {
-      if (confirm('캔버스를 모두 지우시겠습니까?')) {
-        saveCanvasState();
-        padCtx.fillStyle = '#000000';
-        padCtx.fillRect(0, 0, padCanvas.width, padCanvas.height);
-      }
-    }
-
-    async function saveMemoPadToDrawer() {
-      if (isPadVoiceRecording) togglePadVoiceInput();
-      const text = document.getElementById('memopad-text-input').value.trim();
-      const dataUrl = padCanvas.toDataURL('image/jpeg', 0.85);
-      await saveThought('메모딱지', text, [{ type: '메모딱지', data: dataUrl, isVideo: false }]);
-      closeMemoPadDirect();
-      document.getElementById('memopad-text-input').value = '';
-      switchMainMode('idea');
-      selectCategory('전체');
-    }
-
-    function getCanvasCoordinates(e) {
-      const rect = padCanvas.getBoundingClientRect();
-      const scaleX = padCanvas.width / rect.width;
-      const scaleY = padCanvas.height / rect.height;
-      return {
-        x: (e.clientX - rect.left) * scaleX,
-        y: (e.clientY - rect.top) * scaleY
-      };
-    }
-
-    window.addEventListener('DOMContentLoaded', async () => {
-      padCanvas = document.getElementById('memopad-canvas');
-      
-      padCanvas.addEventListener('pointerdown', (e) => {
-        padCanvas.setPointerCapture(e.pointerId);
-        isDrawing = true;
-        saveCanvasState();
-        const pos = getCanvasCoordinates(e);
-        padCtx.beginPath();
-        padCtx.moveTo(pos.x, pos.y);
-      });
-
-      padCanvas.addEventListener('pointermove', (e) => {
-        if (!isDrawing) return;
-        const pos = getCanvasCoordinates(e);
-        padCtx.lineTo(pos.x, pos.y);
-        padCtx.stroke();
-      });
-
-      padCanvas.addEventListener('pointerup', (e) => {
-        if (isDrawing) {
-          isDrawing = false;
-          padCanvas.releasePointerCapture(e.pointerId);
-        }
-      });
-
-      selectCategory('첫 생각');
-
-      /* URL 파라미터(?mode=voice) 감지 시 마이크 자동 실행 */
-      const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.get('mode') === 'voice') {
-        switchMainMode('idea');
-        selectCategory('첫 생각');
-        setTimeout(() => {
-          if (!isVoiceRecording) {
-            toggleVoiceInput();
-          }
-        }, 350);
+      const activeRoom = sessionStorage.getItem('babel_active_room');
+      const activeName = sessionStorage.getItem('babel_active_name');
+      const activeLang = sessionStorage.getItem('babel_active_lang');
+      if (activeRoom && activeName) {
+        document.getElementById('roomInput').value = activeRoom;
+        document.getElementById('nameInput').value = activeName;
+        if (activeLang) document.getElementById('langSelect').value = activeLang;
+        joinRoom();
       }
     });
+
+    window.addEventListener('popstate', () => {
+      if (currentRoom) {
+        if (confirm("대화방을 나가시겠습니까?")) {
+          leaveRoom(false);
+        } else {
+          history.pushState(null, '', location.href);
+        }
+      }
+    });
+
+    function generateRoomCode() {
+      const rand = Math.floor(1000 + Math.random() * 9000);
+      document.getElementById('roomInput').value = `ROOM-${rand}`;
+    }
+
+    function saveToFavorites(room) {
+      let favs = JSON.parse(localStorage.getItem('babel_rooms') || '[]');
+      if (!favs.includes(room)) {
+        favs.unshift(room);
+        if (favs.length > 5) favs.pop();
+        localStorage.setItem('babel_rooms', JSON.stringify(favs));
+      }
+      loadFavorites();
+    }
+
+    function loadFavorites() {
+      const favList = document.getElementById('favList');
+      const favs = JSON.parse(localStorage.getItem('babel_rooms') || '[]');
+      favList.innerHTML = "";
+      if (favs.length === 0) {
+        favList.innerHTML = '<div style="font-size:12px; color:#5A6272;">저장된 방이 없습니다.</div>';
+        return;
+      }
+      favs.forEach(room => {
+        const item = document.createElement('div');
+        item.className = 'fav-item';
+        item.innerHTML = `
+          <span class="fav-code" onclick="selectFav('${room}')">${room}</span>
+          <span class="fav-del" onclick="deleteFav('${room}')">삭제</span>
+        `;
+        favList.appendChild(item);
+      });
+    }
+
+    function selectFav(room) { document.getElementById('roomInput').value = room; }
+    function deleteFav(room) {
+      let favs = JSON.parse(localStorage.getItem('babel_rooms') || '[]');
+      favs = favs.filter(r => r !== room);
+      localStorage.setItem('babel_rooms', JSON.stringify(favs));
+      loadFavorites();
+    }
+
+    function joinRoom() {
+      const r = document.getElementById('roomInput').value.trim().toUpperCase();
+      const n = document.getElementById('nameInput').value.trim();
+      const l = document.getElementById('langSelect').value;
+
+      if (!r) { alert("방 코드를 입력해주세요."); return; }
+      if (!n) { alert("닉네임을 입력해주세요."); return; }
+
+      currentRoom = r;
+      myName = n;
+      myLang = l;
+
+      localStorage.setItem('babel_nickname', myName);
+      localStorage.setItem('babel_lang', myLang);
+      
+      sessionStorage.setItem('babel_active_room', currentRoom);
+      sessionStorage.setItem('babel_active_name', myName);
+      sessionStorage.setItem('babel_active_lang', myLang);
+      saveToFavorites(currentRoom);
+
+      const joinBtn = document.getElementById('joinBtn');
+      joinBtn.innerText = "서버 연결 중...";
+      joinBtn.disabled = true;
+
+      socket = io(BACKEND_URL, { 
+        transports: ["websocket", "polling"],
+        timeout: 45000,
+        reconnection: true,
+        reconnectionAttempts: 15,
+        reconnectionDelay: 1000
+      });
+
+      socket.on("connect", () => {
+        document.getElementById('statusDot').className = "status-dot online";
+        joinBtn.innerText = "입장하기";
+        joinBtn.disabled = false;
+        
+        socket.emit("join_room", { room: currentRoom, name: myName });
+        document.getElementById('displayRoomCode').innerText = currentRoom;
+        document.getElementById('lobby-screen').style.display = 'none';
+        document.getElementById('chat-screen').style.display = 'flex';
+
+        history.pushState(null, '', location.href);
+      });
+
+      socket.on("disconnect", () => {
+        const dot = document.getElementById('statusDot');
+        if (dot) dot.className = "status-dot";
+      });
+
+      socket.on("receive_message", async (data) => {
+        await processAndDisplayMessage(data);
+      });
+
+      socket.on("connect_error", () => {
+        const dot = document.getElementById('statusDot');
+        if (dot) dot.className = "status-dot";
+      });
+    }
+
+    function handleSendForm(e) {
+      e.preventDefault();
+      if (userWantsRecording) toggleSTT();
+      sendMessage();
+    }
+
+    function sendMessage(customText = null) {
+      const input = document.getElementById('msgInput');
+      const text = customText || input.value.trim();
+      
+      if (!text) return;
+
+      if (!socket || !socket.connected) {
+        alert("서버 연결이 원활하지 않습니다. 초록불(🟢)을 확인해 주세요.");
+        return;
+      }
+
+      socket.emit("send_message", {
+        room: currentRoom,
+        sender_name: myName,
+        sender_lang: myLang,
+        text: text
+      });
+      
+      if (!customText) {
+        input.value = "";
+        document.getElementById('previewBox').style.display = 'none';
+        input.focus();
+      }
+    }
+
+    function sendPreset(text) {
+      sendMessage(text);
+    }
+
+    function handlePreview(val) {
+      const previewBox = document.getElementById('previewBox');
+      clearTimeout(previewTimer);
+
+      if (!val || val.trim().length === 0 || myLang !== 'ko') {
+        previewBox.style.display = 'none';
+        return;
+      }
+
+      previewTimer = setTimeout(async () => {
+        const translated = await clientTranslate(val, 'ko', 'en');
+        if (translated && translated !== val) {
+          previewBox.innerText = `🔍 예상 번역(EN): ${translated}`;
+          previewBox.style.display = 'block';
+        } else {
+          previewBox.style.display = 'none';
+        }
+      }, 350);
+    }
+
+    async function processAndDisplayMessage(data) {
+      const msgs = document.getElementById('messages');
+      const isMine = data.sender_name === myName;
+      
+      let displayText = data.original_text;
+
+      if (data.sender_lang !== myLang) {
+        displayText = await clientTranslate(data.original_text, data.sender_lang, myLang);
+      }
+
+      const originalText = data.original_text;
+      const timeStr = new Date(data.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      chatHistory.push(`[${timeStr}] ${data.sender_name}: ${displayText}${displayText !== originalText ? ` (원문: ${originalText})` : ''}`);
+
+      const wrap = document.createElement('div');
+      wrap.className = `msg-wrap ${isMine ? 'mine' : 'theirs'}`;
+
+      let contentHtml = `
+        <div class="translated-row">
+          <span>${displayText}</span>
+          <span class="tts-btn" onclick="playTTS('${displayText.replace(/'/g, "\\'")}', '${myLang}')">🔊</span>
+        </div>
+      `;
+
+      if (displayText !== originalText) {
+        contentHtml += `
+          <div class="original-row">
+            <span>${originalText}</span>
+            <span class="tts-btn" onclick="playTTS('${originalText.replace(/'/g, "\\'")}', '${data.sender_lang}')">🔊</span>
+          </div>
+        `;
+      }
+
+      wrap.innerHTML = `
+        <div class="msg-meta">
+          <span>${data.sender_name} (${timeStr})</span>
+        </div>
+        <div class="msg-box">
+          ${contentHtml}
+        </div>
+      `;
+      msgs.appendChild(wrap);
+      msgs.scrollTop = msgs.scrollHeight;
+
+      if (autoTTS && !isMine) {
+        playTTS(displayText, myLang);
+      }
+    }
+
+    function toggleAutoTTS() {
+      autoTTS = !autoTTS;
+      const btn = document.getElementById('autoTtsBtn');
+      if (autoTTS) {
+        btn.innerText = "자동음성: ON";
+        btn.classList.add('active');
+      } else {
+        btn.innerText = "자동음성: OFF";
+        btn.classList.remove('active');
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      }
+    }
+
+    function toggleSTT() {
+      const micBtn = document.getElementById('micBtn');
+      const input = document.getElementById('msgInput');
+
+      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        alert("현재 브라우저는 음성 입력을 지원하지 않습니다. Chrome 또는 Safari를 사용해 주세요.");
+        return;
+      }
+
+      if (userWantsRecording) {
+        userWantsRecording = false;
+        micBtn.classList.remove('recording');
+        if (recognition) recognition.stop();
+        return;
+      }
+
+      userWantsRecording = true;
+      micBtn.classList.add('recording');
+
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new SpeechRecognition();
+
+      const langMap = {
+        'ko': 'ko-KR', 'en': 'en-US', 'ja': 'ja-JP', 'zh-CN': 'zh-CN',
+        'es': 'es-ES', 'fr': 'fr-FR', 'de': 'de-DE', 'vi': 'vi-VN',
+        'th': 'th-TH', 'ar': 'ar-SA'
+      };
+
+      recognition.lang = langMap[myLang] || 'ko-KR';
+      recognition.continuous = true;
+      recognition.interimResults = false;
+
+      recognition.onresult = (event) => {
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            const transcript = event.results[i][0].transcript.trim();
+            if (transcript) {
+              insertTextAtCursor(input, transcript + " ");
+              handlePreview(input.value);
+            }
+          }
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.warn("STT Error:", event.error);
+      };
+
+      recognition.onend = () => {
+        if (userWantsRecording) {
+          try {
+            recognition.start();
+          } catch (e) {}
+        } else {
+          micBtn.classList.remove('recording');
+        }
+      };
+
+      try {
+        recognition.start();
+      } catch (e) {
+        console.error("STT Start Error:", e);
+      }
+    }
+
+    function insertTextAtCursor(input, textToInsert) {
+      const start = input.selectionStart !== null ? input.selectionStart : input.value.length;
+      const end = input.selectionEnd !== null ? input.selectionEnd : input.value.length;
+      const original = input.value;
+
+      input.value = original.substring(0, start) + textToInsert + original.substring(end);
+      const newPos = start + textToInsert.length;
+      input.setSelectionRange(newPos, newPos);
+      input.focus();
+    }
+
+    function openQRModal() {
+      const modal = document.getElementById('qrModal');
+      const qrContainer = document.getElementById('qrcode');
+      const qrText = document.getElementById('qrRoomText');
+      const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${currentRoom}`;
+
+      qrContainer.innerHTML = "";
+      new QRCode(qrContainer, {
+        text: inviteUrl,
+        width: 180,
+        height: 180,
+        colorDark: "#000000",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.H
+      });
+
+      qrText.innerText = currentRoom;
+      modal.style.display = 'flex';
+    }
+
+    function closeQRModal(e) {
+      document.getElementById('qrModal').style.display = 'none';
+    }
+
+    function downloadChatLog() {
+      if (chatHistory.length === 0) {
+        alert("저장할 대화 내용이 없습니다.");
+        return;
+      }
+      const title = `[Babel-Room] ${currentRoom} 대화기록\n일시: ${new Date().toLocaleString()}\n----------------------------------------\n\n`;
+      const blob = new Blob([title + chatHistory.join('\n')], { type: 'text/plain;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `대화기록_${currentRoom}_${Date.now()}.txt`;
+      a.click();
+    }
+
+    function playTTS(text, langCode) {
+      if (!text || text.trim() === '') return;
+
+      const langMap = {
+        'ko': 'ko-KR', 'en': 'en-US', 'ja': 'ja-JP', 'zh-CN': 'zh-CN',
+        'es': 'es-ES', 'fr': 'fr-FR', 'de': 'de-DE', 'vi': 'vi-VN',
+        'th': 'th-TH', 'ar': 'ar-SA'
+      };
+      const targetLang = langMap[langCode] || langCode;
+
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+
+        if (availableVoices.length === 0) loadVoices();
+        const matchedVoice = availableVoices.find(v => v.lang === targetLang || v.lang.startsWith(langCode));
+
+        if (matchedVoice) {
+          const utter = new SpeechSynthesisUtterance(text);
+          utter.voice = matchedVoice;
+          utter.lang = targetLang;
+          utter.rate = 0.95;
+          window.speechSynthesis.speak(utter);
+          return;
+        }
+      }
+
+      try {
+        const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${langCode}&client=tw-ob&q=${encodeURIComponent(text)}`;
+        const audio = new Audio(audioUrl);
+        audio.play().catch(err => {
+          console.warn("Google TTS audio play failed:", err);
+        });
+      } catch (e) {
+        console.error("TTS Fallback Error:", e);
+      }
+    }
+
+    function copyInviteLink() {
+      const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${currentRoom}`;
+      navigator.clipboard.writeText(inviteUrl).then(() => alert("초대 링크가 복사되었습니다:\n" + inviteUrl));
+    }
+
+    function leaveRoom(manual = true) {
+      if (!manual || confirm("대화방을 나가시겠습니까?")) {
+        userWantsRecording = false;
+        if (recognition) recognition.stop();
+        sessionStorage.removeItem('babel_active_room');
+        sessionStorage.removeItem('babel_active_name');
+        sessionStorage.removeItem('babel_active_lang');
+        if (socket) {
+          socket.emit("leave_room", { room: currentRoom });
+          socket.disconnect();
+        }
+        location.reload();
+      }
+    }
   </script>
 </body>
 </html>
