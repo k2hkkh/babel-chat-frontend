@@ -2,7 +2,6 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <!-- 모바일 노치 및 홈 바 영역(Safe Area)을 전체화면으로 활용하기 위한 viewport-fit=cover 적용 -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
@@ -23,40 +22,52 @@
     })();
   </script>
 
-  <!-- Socket.io 및 실시간 QR코드 생성 라이브러리 -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
   <style>
     html, body { 
-      height: 100%;
-      height: 100dvh; /* 동적 뷰포트 높이 기본 적용 */
+      min-height: 100vh;
+      min-height: 100dvh;
       margin: 0; 
-      overscroll-behavior-y: none;
+      padding: 0;
+      background: #14181F;
+      color: #EDEAE3;
+      font-family: system-ui, -apple-system, sans-serif;
+      overflow-x: hidden;
+      overflow-y: auto; /* 가로 모드 높이 부족 시 스크롤 허용 */
       -webkit-overflow-scrolling: touch;
     }
     * { box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, sans-serif; background: #14181F; color: #EDEAE3; }
     input, select, button { font-family: inherit; }
 
-    /* Safe Area 패딩 대응 */
+    /* 로비 화면: 가로 모드에서도 스크롤 가능하도록 flex 및 여백 최적화 */
     .screen { 
       min-height: 100vh;
       min-height: 100dvh;
       display: flex; 
       align-items: center; 
       justify-content: center; 
-      padding: 20px;
-      padding-top: calc(20px + env(safe-area-inset-top, 0px));
-      padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
-      position: relative; 
+      padding: 16px;
+      padding-top: calc(16px + env(safe-area-inset-top, 0px));
+      padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+      padding-left: calc(16px + env(safe-area-inset-left, 0px));
+      padding-right: calc(16px + env(safe-area-inset-right, 0px));
     }
-    .card { width: 100%; max-width: 400px; background: #1E2530; border-radius: 16px; padding: 28px 24px; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
+    .card { 
+      width: 100%; 
+      max-width: 480px; 
+      background: #1E2530; 
+      border-radius: 16px; 
+      padding: 24px; 
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4); 
+      margin: auto 0;
+    }
     .brand { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
     .brand-title { font-size: 24px; color: #EDEAE3; font-weight: 600; }
-    .sub { color: #8A93A3; font-size: 13px; margin: 0 0 20px 0; }
+    .sub { color: #8A93A3; font-size: 13px; margin: 0 0 16px 0; }
     label { color: #8A93A3; font-size: 12px; display: block; margin-bottom: 6px; }
-    .field { margin-bottom: 16px; }
+    .field { margin-bottom: 14px; }
     .input-row { display: flex; gap: 8px; }
     input[type=text], select {
       width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #333B49;
@@ -73,20 +84,21 @@
     }
     .join-btn:disabled { background: #555; color: #888; cursor: not-allowed; }
 
-    .fav-wrap { margin-top: 20px; border-top: 1px solid #2A313D; padding-top: 16px; }
+    .fav-wrap { margin-top: 16px; border-top: 1px solid #2A313D; padding-top: 14px; }
     .fav-title { font-size: 12px; color: #8A93A3; margin-bottom: 8px; }
     .fav-list { display: flex; flex-direction: column; gap: 6px; max-height: 120px; overflow-y: auto; }
     .fav-item { display: flex; justify-content: space-between; align-items: center; background: #14181F; padding: 8px 12px; border-radius: 6px; font-size: 13px; border: 1px solid #2A313D; }
     .fav-code { font-weight: bold; color: #3FA9A0; cursor: pointer; }
     .fav-del { color: #E05252; cursor: pointer; font-size: 12px; }
 
-    /* 대화창 화면: 100dvh로 화면 늘어남/줄어듬 방지 */
+    /* 대화창 화면: 100dvh로 화면 늘어남 방지 */
     #chat-screen { 
       display: none; 
       flex-direction: column; 
       height: 100vh;
       height: 100dvh;
-      max-width: 600px; 
+      width: 100%;
+      max-width: 800px; /* 가로 화면에서 더 넓게 쓰도록 확장 */
       margin: 0 auto; 
       background: #1E2530; 
       position: relative; 
@@ -94,12 +106,15 @@
     .chat-header {
       padding: 10px 14px; 
       padding-top: calc(10px + env(safe-area-inset-top, 0px));
+      padding-left: calc(14px + env(safe-area-inset-left, 0px));
+      padding-right: calc(14px + env(safe-area-inset-right, 0px));
       background: #14181F; 
       border-bottom: 1px solid #2A313D;
       display: flex; 
       justify-content: space-between; 
       align-items: center; 
       gap: 6px;
+      flex-shrink: 0;
     }
     .room-info { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .room-badge { background: #2A313D; padding: 4px 6px; border-radius: 6px; font-size: 12px; font-weight: bold; color: #3FA9A0; }
@@ -112,7 +127,7 @@
     
     .preset-bar {
       display: flex; gap: 6px; overflow-x: auto; padding: 6px 14px; background: #181E27; border-bottom: 1px solid #2A313D;
-      white-space: nowrap; -webkit-overflow-scrolling: touch;
+      white-space: nowrap; -webkit-overflow-scrolling: touch; flex-shrink: 0;
     }
     .preset-chip {
       background: #252D3A; border: 1px solid #333B49; color: #B0B8C4;
@@ -134,11 +149,13 @@
     .original-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; font-size: 11px; margin-top: 6px; opacity: 0.8; border-top: 1px dashed rgba(255,255,255,0.25); padding-top: 4px; }
     .tts-btn { cursor: pointer; font-size: 13px; opacity: 0.85; flex-shrink: 0; padding: 0 2px; }
     
-    /* 하단 입력창 영역: Safe Area Inset Bottom 적용 */
     .input-section { 
       background: #14181F; 
       border-top: 1px solid #2A313D; 
-      padding-bottom: env(safe-area-inset-bottom, 0px); /* 아이폰 하단 바 영역 침범 방지 */
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      padding-left: env(safe-area-inset-left, 0px);
+      padding-right: env(safe-area-inset-right, 0px);
+      flex-shrink: 0;
     }
     .preview-box {
       padding: 4px 16px; font-size: 11px; color: #3FA9A0; min-height: 18px;
