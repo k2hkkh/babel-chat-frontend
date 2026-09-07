@@ -7,13 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <title>Babel Room - 실시간 다국어 번역 채팅</title>
-
-  <!-- 전체화면 앱(PWA) 모드 -->
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <link rel="manifest" href="data:application/manifest+json;utf-8,%7B%22name%22%3A%22Babel%20Room%22%2C%22short_name%22%3A%22Babel%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23000000%22%2C%22theme_color%22%3A%22%23000000%22%7D" />
-
+  
   <script>
     (function() {
       var userAgent = navigator.userAgent.toLowerCase();
@@ -27,8 +21,6 @@
       }
     })();
   </script>
-  
-
 
   <!-- Socket.io 및 실시간 QR코드 생성 라이브러리 -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
@@ -89,7 +81,6 @@
     .icon-btn.active { background: rgba(63, 169, 160, 0.25); border-color: #3FA9A0; color: #3FA9A0; }
     .exit-btn { background: rgba(224, 82, 82, 0.15); border-color: #E05252; color: #E05252; }
     
-    /* 상용구 프리셋 바 */
     .preset-bar {
       display: flex; gap: 6px; overflow-x: auto; padding: 6px 14px; background: #181E27; border-bottom: 1px solid #2A313D;
       white-space: nowrap; -webkit-overflow-scrolling: touch;
@@ -114,7 +105,6 @@
     .original-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; font-size: 11px; margin-top: 6px; opacity: 0.8; border-top: 1px dashed rgba(255,255,255,0.25); padding-top: 4px; }
     .tts-btn { cursor: pointer; font-size: 13px; opacity: 0.85; flex-shrink: 0; padding: 0 2px; }
     
-    /* 하단 입력 영역 & 번역 미리보기 */
     .input-section { background: #14181F; border-top: 1px solid #2A313D; }
     .preview-box {
       padding: 4px 16px; font-size: 11px; color: #3FA9A0; min-height: 18px;
@@ -139,7 +129,6 @@
 
     .send-btn { background: #3FA9A0; border: none; color: #0E1116; font-weight: bold; padding: 10px 16px; border-radius: 8px; cursor: pointer; flex-shrink: 0; }
 
-    /* QR 코드 모달 창 */
     .modal-overlay {
       display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
       background: rgba(0, 0, 0, 0.75); z-index: 1000; align-items: center; justify-content: center; padding: 20px;
@@ -219,7 +208,7 @@
       </div>
     </div>
 
-    <!-- 빠른 응답 프리셋 칩 -->
+    <!-- 빠른 응답 프리셋 -->
     <div class="preset-bar">
       <div class="preset-chip" onclick="sendPreset('안녕하세요! 반갑습니다.')">👋 인사</div>
       <div class="preset-chip" onclick="sendPreset('네, 알겠습니다.')">👌 확인</div>
@@ -251,7 +240,7 @@
     </div>
   </div>
 
-  <!-- QR 코드 팝업 모달 -->
+  <!-- QR 코드 모달 창 -->
   <div id="qrModal" class="modal-overlay" onclick="closeQRModal(event)">
     <div class="modal-card" onclick="event.stopPropagation()">
       <div class="modal-title">상대방 초대 QR 코드</div>
@@ -274,7 +263,18 @@
     let userWantsRecording = false;
     let autoTTS = false;
     let previewTimer = null;
-    let qrGenerator = null;
+
+    // 브라우저 내장 보이스 캐싱
+    let availableVoices = [];
+    function loadVoices() {
+      if ('speechSynthesis' in window) {
+        availableVoices = window.speechSynthesis.getVoices();
+      }
+    }
+    if ('speechSynthesis' in window) {
+      loadVoices();
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
 
     async function clientTranslate(text, sourceLang, targetLang) {
       if (!text || text.trim() === '') return text;
@@ -468,7 +468,6 @@
       sendMessage(text);
     }
 
-    // 전송 전 영문 번역 실시간 미리보기 (디바운스 처리)
     function handlePreview(val) {
       const previewBox = document.getElementById('previewBox');
       clearTimeout(previewTimer);
@@ -534,7 +533,6 @@
       msgs.appendChild(wrap);
       msgs.scrollTop = msgs.scrollHeight;
 
-      // 자동 읽기(Auto-TTS) 활성화 상태이고 상대방 메시지인 경우 자동 음성 출력
       if (autoTTS && !isMine) {
         playTTS(displayText, myLang);
       }
@@ -629,7 +627,6 @@
       input.focus();
     }
 
-    // QR 모달 열기 및 즉석 생성
     function openQRModal() {
       const modal = document.getElementById('qrModal');
       const qrContainer = document.getElementById('qrcode');
@@ -637,7 +634,7 @@
       const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${currentRoom}`;
 
       qrContainer.innerHTML = "";
-      qrGenerator = new QRCode(qrContainer, {
+      new QRCode(qrContainer, {
         text: inviteUrl,
         width: 180,
         height: 180,
@@ -667,20 +664,44 @@
       a.click();
     }
 
+    // 2중 백업(Fallback) 고음질 현지 발음 TTS 엔진
     function playTTS(text, langCode) {
-      if (!('speechSynthesis' in window)) return;
-      window.speechSynthesis.cancel();
+      if (!text || text.trim() === '') return;
 
       const langMap = {
         'ko': 'ko-KR', 'en': 'en-US', 'ja': 'ja-JP', 'zh-CN': 'zh-CN',
         'es': 'es-ES', 'fr': 'fr-FR', 'de': 'de-DE', 'vi': 'vi-VN',
         'th': 'th-TH', 'ar': 'ar-SA'
       };
+      const targetLang = langMap[langCode] || langCode;
 
-      const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = langMap[langCode] || langCode;
-      utter.rate = 0.95;
-      window.speechSynthesis.speak(utter);
+      // 1차 시도: 브라우저 내 정식 현지 Voice 객체 직접 매칭
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+
+        if (availableVoices.length === 0) loadVoices();
+        const matchedVoice = availableVoices.find(v => v.lang === targetLang || v.lang.startsWith(langCode));
+
+        if (matchedVoice) {
+          const utter = new SpeechSynthesisUtterance(text);
+          utter.voice = matchedVoice;
+          utter.lang = targetLang;
+          utter.rate = 0.95;
+          window.speechSynthesis.speak(utter);
+          return;
+        }
+      }
+
+      // 2차 시도 (Fallback): 기기 음성팩 부재/왜곡 시 구글 원어민 오디오 직접 스트리밍
+      try {
+        const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${langCode}&client=tw-ob&q=${encodeURIComponent(text)}`;
+        const audio = new Audio(audioUrl);
+        audio.play().catch(err => {
+          console.warn("Google TTS audio play failed:", err);
+        });
+      } catch (e) {
+        console.error("TTS Fallback Error:", e);
+      }
     }
 
     function copyInviteLink() {
